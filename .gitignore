@@ -1,0 +1,15 @@
+node_modules/
+test-results/
+playwright-report/
+.local/
+src/portable.json
+releases/
+
+# Local work notes, credentials, and desktop profiles
+docs/PROGRESS.md
+.env
+.env.*
+!.env.example
+*.log
+**/data/
+*.drawai

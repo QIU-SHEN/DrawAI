@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#262626">
+  <meta name="description" content="DrawAI 三维流程设计工具：在平面与三维视图中编辑图形、拖拽连线、管理图层和自由表格。">
+  <title>DrawAI · 多一层，看清关系</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="DrawAI 首页"><span class="brand-mark">▱<i>▱</i></span>draw<span>ai</span><small>LAB</small></a>
+    <span class="header-divider"></span>
+    <div class="project-heading"><strong>工作空间 1</strong><span>空间流程原型</span></div>
+    <div class="header-actions"><span id="save-status" role="status">本地自动保存</span><button id="undo" class="icon-button" title="撤销 Ctrl+Z" aria-label="撤销">↶</button><button id="redo" class="icon-button" title="重做 Ctrl+Shift+Z" aria-label="重做">↷</button><span class="header-divider"></span><button id="save-original" class="button quiet" hidden title="选择当前打开的 HTML 文件并授权，随后修改自动保存到该文件">启用文件自动保存</button><button id="import" class="button quiet">导入</button><button id="export" class="button quiet" title="导出当前工作空间为 .drawai 文件，由 DrawAI 程序打开">导出文件 ↗</button></div>
+  </header>
+  <div class="app-body">
+    <aside class="sidebar">
+      <div class="sidebar-heading">工作空间 <div class="workspace-heading-actions"><span id="workspace-count">01</span><button id="add-workspace" aria-label="新增工作空间" title="新增工作空间">＋</button></div></div>
+      <div id="workspace-list" class="workspace-list" aria-label="工作空间列表"></div>
+      <div class="section-title">图层 <button id="add-layer" aria-label="新增图层" title="新增图层">＋</button></div>
+      <div id="layer-list" class="layer-list"></div>
+      <div class="section-title">图形库 <small>拖入画布</small></div>
+      <div id="shape-palette" class="shape-palette" aria-label="可拖拽图形库"></div>
+      <p class="palette-hint">拖入当前图层 · 双击图形快速添加</p>
+      <div class="section-title node-section-title">本层节点 <span id="flow-count"></span></div>
+      <div id="node-list" class="node-list"></div>
+      <div class="sidebar-bottom"><div class="local-badge"><span></span> 本机工作空间</div><p>修改自动保存在此浏览器<br>导出文件可备份或继续编辑</p><button id="reset" class="text-button">清空画布</button></div>
+    </aside>
+    <main class="workspace">
+      <div class="workspace-top"><div class="breadcrumb"><button id="sidebar-toggle" aria-label="展开图层和图形库" aria-expanded="false">☰ 图层</button>工作空间 <span>/</span> <strong id="workspace-breadcrumb">工作空间 1</strong> <span class="prototype-tag">原型</span></div><div class="workspace-tools"><div id="node-actions" class="node-actions" role="group" aria-label="选中图形操作" hidden><button id="edit-node-text" title="双击图形或按 F2 编辑文字">改文字</button><button id="link-selected-node">连线</button><button id="node-properties">属性</button></div><div id="relation-actions" class="node-actions" role="group" aria-label="连线操作" hidden><button id="edit-relation-text">改文字</button><button id="delete-relation" title="删除选中连线，可撤销">删除连线</button></div><div id="table-actions" class="node-actions" role="group" aria-label="表格操作" hidden><button id="edit-table-content">编辑内容</button><button id="delete-table">删除表格</button></div><div id="multi-actions" class="node-actions" hidden><span id="selection-count"></span><button id="delete-selected">删除所选</button></div><div class="view-switch pointer-tools" role="group" aria-label="画布工具"><button id="tool-select" class="active" aria-pressed="true" title="拖动空白框选；Shift 或 Ctrl 点击多选">↖ 选取</button><button id="tool-drag" aria-pressed="false" title="点击选取和移动图形；空白拖动控制画布，不框选">✥ 拖动</button></div><div class="view-switch" role="group" aria-label="视图切换"><button id="view-flat" aria-pressed="false">▤ 平面</button><button id="view-spatial" class="active" aria-pressed="true">◇ 三维</button></div></div></div>
+      <div id="stage" class="stage"><svg id="scene" xmlns="http://www.w3.org/2000/svg" aria-label="可编辑的空间流程图" role="img"></svg><div class="canvas-legend"><span><i class="legend-line"></i>流程顺序</span><span><i class="legend-line dashed"></i>关联连线</span><label><input id="show-relations" type="checkbox" checked> 显示关联</label></div><div id="connect-banner" class="connect-banner" hidden>选择目标节点建立连线 <button id="cancel-connect">取消</button></div><div class="orientation" aria-hidden="true"><div class="orientation-cube">Z</div><span>空间视图</span></div></div>
+      <div class="canvas-bottom"><div class="view-controls"><button id="zoom-out" aria-label="缩小">−</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="放大">＋</button><span class="control-separator"></span><button id="fit" title="还原相机并适应画布">适应画布</button><span class="control-separator"></span><button id="camera-toggle" aria-expanded="false">⚙ 视角</button></div><span class="interaction-hint" id="interaction-hint">拖动图形跨层移动 · 空白拖动旋转 · 滚轮缩放</span></div>
+      <div class="camera-panel" id="camera-panel" hidden><div><strong>空间视角</strong><button id="camera-close" aria-label="关闭视角设置">×</button></div><label>俯仰旋转 <output id="tilt-value">55°</output><input id="tilt" type="range" min="0" max="360" value="55"></label><label>水平旋转 <output id="yaw-value">−30°</output><input id="yaw" type="range" min="-180" max="180" value="-30"></label><label>层间距离 <output id="gap-value">640</output><input id="gap" type="range" min="250" max="1000" step="10" value="640"></label><p>上下、左右拖动空白均可连续旋转 360°，Shift + 拖动平移。</p></div>
+    </main>
+    <aside id="inspector" class="inspector" hidden></aside>
+  </div>
+  <dialog id="confirm-dialog" class="confirm-dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-message"></p><div><button id="confirm-cancel" class="button quiet">取消</button><button id="confirm-ok" class="button primary">确认</button></div></dialog>
+  <dialog id="workspace-dialog" class="confirm-dialog"><form id="workspace-form"><h2 id="workspace-dialog-title">新增工作空间</h2><label class="field">名称<input id="workspace-name" maxlength="60" required autocomplete="off" placeholder="例如：产品设计"></label><p id="workspace-dialog-hint">创建独立的空白画布，原工作空间会保留。</p><div class="workspace-dialog-actions"><button id="workspace-cancel" type="button" class="button quiet">取消</button><button type="submit" class="button primary">确定</button></div></form></dialog>
+  <input id="import-file" type="file" accept=".drawai,.json,application/json" hidden>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="palette-ghost" class="palette-ghost" hidden></div>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

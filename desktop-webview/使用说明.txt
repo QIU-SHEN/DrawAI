@@ -1,0 +1,23 @@
+DrawAI WebView2 试验版 · Windows x64
+
+完整解压后双击 DrawAI-WebView2.exe。保留全部文件，运行缓存位于程序旁的 data 文件夹。
+此版复用电脑已有的 Microsoft Edge WebView2 Runtime，不携带整个浏览器。
+需要 Windows 10/11 x64、.NET Framework 4.6.2 或更新版本和 WebView2 Runtime。
+若提示缺少 WebView2，可从微软官网下载 Evergreen Runtime 后再运行：
+https://developer.microsoft.com/microsoft-edge/webview2/
+
+打开、保存、另存为：Ctrl+O、Ctrl+S、Ctrl+Shift+S。
+.drawai 与 Electron 版通用；网页旧图表可导入 JSON 后保存。
+每个工作空间独立保存成文件，关闭前会提示保存未保存修改。
+原文件被外部修改时停止覆盖，请另存为或重新打开。
+双击文件：首次在「文件 → 关联 .drawai 文件」确认关联到此试验版。
+若 Windows 询问打开方式，选择此文件夹的 DrawAI-WebView2.exe 并勾选始终使用。
+关联仅在你主动点击时修改。旧 Electron 版仍保留，可在其菜单中重新关联切回。
+移动程序文件夹后需要重新关联。双击已打开的图表会切回已有窗口。
+右上角「导出文件」生成当前工作空间的 .drawai 副本，不改变原文件的保存位置。
+仍可导入以前的 JSON 图表；不再提供 JSON / HTML 导出。不需要登录或联网。
+
+当前为未签名的试验版。请保留重要图表原文件或使用“另存为”比较两个版本。
+
+启动只创建一个空白图层，不附带示例图表。
+顶部「主题」菜单可切换强调色，只替换原粉色区域；黑白灰画布保持不变。主题偏好保存在程序旁 data/theme.txt。

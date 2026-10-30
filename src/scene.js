@@ -1,0 +1,286 @@
+import { tableObject } from './model.js';
+export const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = escapeHtml;
+const radians = n => n * Math.PI / 180;
+export const wrapAngle = angle => ((angle % 360) + 360) % 360;
+export const canEditPlane = camera => camera.mode === 'flat' || Math.abs(Math.cos(radians(camera.tilt))) > 1e-6;
+export function project(x, y, z, camera) {
+  if (camera.mode === 'flat') return { x, y };
+  const yaw = radians(camera.yaw), tilt = radians(camera.tilt);
+  return { x: x * Math.cos(yaw) - y * Math.sin(yaw), y: (x * Math.sin(yaw) + y * Math.cos(yaw)) * Math.cos(tilt) - z * Math.sin(tilt) };
+}
+export function unprojectDelta(dx, dy, camera) {
+  if (camera.mode === 'flat') return { x: dx, y: dy };
+  // Exactly edge-on, the hidden in-plane axis cannot be recovered. Use its
+  // minimum-norm displacement instead of dividing by zero or exploding coordinates.
+  const yaw = radians(camera.yaw), yy = canEditPlane(camera) ? dy / Math.cos(radians(camera.tilt)) : 0;
+  return { x: dx * Math.cos(yaw) + yy * Math.sin(yaw), y: -dx * Math.sin(yaw) + yy * Math.cos(yaw) };
+}
+export function unprojectPoint(x, y, z, camera) {
+  return unprojectDelta(x, y + (camera.mode === 'flat' ? 0 : z * Math.sin(radians(camera.tilt))), camera);
+}
+export const layerZ = (doc, id, camera) => ((doc.layers.length - 1) / 2 - doc.layers.findIndex(layer => layer.id === id)) * camera.gap;
+export function planeMatrix(z, camera) {
+  if (camera.mode === 'flat') return 'matrix(1 0 0 1 0 0)';
+  const yaw = radians(camera.yaw), tilt = radians(camera.tilt);
+  return 'matrix(' + [Math.cos(yaw), Math.sin(yaw) * Math.cos(tilt), -Math.sin(yaw), Math.cos(yaw) * Math.cos(tilt), 0, -z * Math.sin(tilt)].join(' ') + ')';
+}
+function wrap(text, limit = 17, maxLines = 2) {
+  const lines = ['']; let width = 0;
+  for (const c of text) {
+    if (c === '\r') continue;
+    if (c === '\n') {
+      if (lines.length === maxLines) { lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1) + '…'; break; }
+      lines.push(''); width = 0; continue;
+    }
+    const w = /[\u0000-\u00ff]/.test(c) ? 0.55 : 1;
+    if (width + w > limit) {
+      if (lines.length === maxLines) { lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1) + '…'; break; }
+      lines.push(''); width = 0;
+    }
+    lines[lines.length - 1] += c; width += w;
+  }
+  return lines;
+}
+const pt = p => p.x.toFixed(2) + ',' + p.y.toFixed(2);
+export const nodeSize = n => ({ w: (n.width ?? (n.shape === 'diamond' ? 260 : n.shape === 'ellipse' ? 210 : 200)) / 2, h: (n.height ?? (n.shape === 'diamond' ? 180 : n.shape === 'ellipse' ? 140 : 112)) / 2 });
+export const portVector = port => ({ n: { x: 0, y: -1 }, e: { x: 1, y: 0 }, s: { x: 0, y: 1 }, w: { x: -1, y: 0 } }[port]);
+export function shapePolygon(node) {
+  const { w, h } = nodeSize(node);
+  const vertices = {
+    diamond: [[0,-1],[1,0],[0,1],[-1,0]],
+    parallelogram: [[-.75,-1],[1,-1],[.75,1],[-1,1]],
+    triangle: [[0,-1],[1,1],[-1,1]],
+    trapezoid: [[-.6,-1],[.6,-1],[1,1],[-1,1]],
+    pentagon: [[0,-1],[1,-.25],[.62,1],[-.62,1],[-1,-.25]],
+    hexagon: [[-.55,-1],[.55,-1],[1,0],[.55,1],[-.55,1],[-1,0]],
+    octagon: [[-.55,-1],[.55,-1],[1,-.55],[1,.55],[.55,1],[-.55,1],[-1,.55],[-1,-.55]],
+    chevron: [[-1,-1],[.45,-1],[1,0],[.45,1],[-1,1],[-.45,0]],
+  }[node.shape];
+  return vertices?.map(([x,y]) => ({ x: x*w, y: y*h })) || null;
+}
+export function portPoint(node, port) {
+  if (typeof port === 'object') {
+    const { w, h } = nodeSize(node);
+    return perimeterPoint(node, { x: node.x + port.x * w, y: node.y + port.y * h });
+  }
+  const { w, h } = nodeSize(node), v = portVector(port);
+  if (node.shape === 'parallelogram') return { x: node.x + (v.x ? v.x * w * .875 : -v.y * w * .125), y: node.y + v.y * h };
+  if (shapePolygon(node)) return perimeterPoint(node, { x: node.x + v.x * w, y: node.y + v.y * h });
+  return { x: node.x + v.x * w * (node.shape === 'parallelogram' ? .875 : 1), y: node.y + v.y * h };
+}
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+// Resolve on the actual outline, including curved corners, rather than the bounding box.
+export function perimeterPoint(node, point) {
+  const { w, h } = nodeSize(node), x = point.x - node.x, y = point.y - node.y;
+  if (node.shape === 'ellipse') {
+    const angle = x || y ? Math.atan2(y / h, x / w) : -Math.PI / 2;
+    return { x: node.x + w * Math.cos(angle), y: node.y + h * Math.sin(angle) };
+  }
+  const candidates = [];
+  const segment = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+    const t = length ? clamp(((x - a.x) * dx + (y - a.y) * dy) / length, 0, 1) : 0;
+    candidates.push({ x: a.x + t * dx, y: a.y + t * dy });
+  };
+  const polygon = vertices => vertices.forEach((p, i) => segment(p, vertices[(i + 1) % vertices.length]));
+  const vertices = shapePolygon(node);
+  if (vertices) polygon(vertices);
+  else {
+    const r = Math.min(w, h, node.kind === 'table' ? 8 : node.shape === 'rounded' ? 15 : node.shape === 'text' ? 3 : 2);
+    segment({ x: -w + r, y: -h }, { x: w - r, y: -h });
+    segment({ x: w, y: -h + r }, { x: w, y: h - r });
+    segment({ x: w - r, y: h }, { x: -w + r, y: h });
+    segment({ x: -w, y: h - r }, { x: -w, y: -h + r });
+    [[w - r, h - r, 0], [-w + r, h - r, Math.PI / 2], [-w + r, -h + r, Math.PI], [w - r, -h + r, Math.PI * 1.5]].forEach(([cx, cy, begin]) => {
+      const angle = (Math.atan2(y - cy, x - cx) + Math.PI * 2) % (Math.PI * 2);
+      for (const t of [begin, begin + Math.PI / 2, clamp(angle, begin, begin + Math.PI / 2)]) candidates.push({ x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
+    });
+  }
+  const best = candidates.reduce((a, b) => Math.hypot(a.x - x, a.y - y) < Math.hypot(b.x - x, b.y - y) ? a : b);
+  return { x: node.x + best.x, y: node.y + best.y };
+}
+export function freePort(node, point) {
+  const p = perimeterPoint(node, point), { w, h } = nodeSize(node);
+  return { x: clamp((p.x - node.x) / w, -1, 1), y: clamp((p.y - node.y) / h, -1, 1) };
+}
+function portDirection(node, port) {
+  if (typeof port === 'string') return portVector(port);
+  const p = portPoint(node, port), { w, h } = nodeSize(node), x = (p.x - node.x) / w, y = (p.y - node.y) / h;
+  if (Math.abs(x) > .99999) return { x: Math.sign(x), y: 0 };
+  if (Math.abs(y) > .99999) return { x: 0, y: Math.sign(y) };
+  const length = Math.hypot(x, y) || 1;
+  return { x: x / length, y: y / length };
+}
+function projectedFreeCurve(e, a, b, start, end, camera, doc) {
+  const za = layerZ(doc, a.layerId, camera), zb = layerZ(doc, b.layerId, camera);
+  const p = project(start.x, start.y, za, camera), q = project(end.x, end.y, zb, camera);
+  const sv = portDirection(a, e.sourcePort || 's'), tv = portDirection(b, e.targetPort || 'n');
+  const bend = Math.max(90, Math.min(300, Math.hypot(p.x - q.x, p.y - q.y) * .4));
+  const c1 = project(start.x + sv.x * bend, start.y + sv.y * bend, za, camera);
+  const c2 = project(end.x + tv.x * bend, end.y + tv.y * bend, zb, camera);
+  return { d: `M${pt(p)} C${pt(c1)} ${pt(c2)} ${pt(q)}`, label: { x: (p.x + 3 * c1.x + 3 * c2.x + q.x) / 8, y: (p.y + 3 * c1.y + 3 * c2.y + q.y) / 8 } };
+}
+export function nearestPort(node, point) {
+  return ['n', 'e', 's', 'w'].sort((a, b) => {
+    const p = portPoint(node, a), q = portPoint(node, b);
+    return Math.hypot(p.x - point.x, p.y - point.y) - Math.hypot(q.x - point.x, q.y - point.y);
+  })[0];
+}
+const textLines = (text, x, y, limit, cls, lineHeight = 25) => '<text class="' + cls + '" x="' + x + '" y="' + y + '">' + wrap(text, limit).map((line, i) => '<tspan x="' + x + '" dy="' + (i ? lineHeight : 0) + '">' + esc(line) + '</tspan>').join('') + '</text>';
+
+export function layerBounds(doc, id) {
+  const nodes = doc.nodes.filter(n => n.layerId === id);
+  const tables = doc.tables.filter(t => t.layerId === id);
+  return {
+    left: Math.min(-820, ...nodes.map(n => n.x - nodeSize(n).w - 55), ...tables.map(t => t.x - 100)),
+    right: Math.max(820, ...nodes.map(n => n.x + nodeSize(n).w + 55), ...tables.map(t => t.x + t.width + 100)),
+    top: Math.min(tables.length && !nodes.length ? -260 : -400, ...nodes.map(n => n.y - nodeSize(n).h - 65), ...tables.map(t => t.y - 100)),
+    bottom: Math.max(tables.length && !nodes.length ? 340 : 425, ...nodes.map(n => n.y + nodeSize(n).h + 65), ...tables.map(t => t.y + t.height + 80)),
+  };
+}
+function plane(doc, layer, index, active) {
+  const { left, right, top, bottom } = layerBounds(doc, layer.id);
+  let grid = '';
+  const step = Math.max(80, Math.ceil(Math.max(right - left, bottom - top) / 6400) * 80);
+  for (let x = Math.ceil(left / step) * step; x < right; x += step) grid += '<line x1="' + x + '" y1="' + top + '" x2="' + x + '" y2="' + bottom + '"/>';
+  for (let y = Math.ceil(top / step) * step; y < bottom; y += step) grid += '<line x1="' + left + '" y1="' + y + '" x2="' + right + '" y2="' + y + '"/>';
+  return '<g class="plane ' + (doc.tables.some(t => t.layerId === layer.id) ? 'data-plane' : 'flow-plane') + (active ? ' active-plane' : '') + '" data-plane-layer="' + esc(layer.id) + '"><rect class="plane-shadow" x="' + (left + 7) + '" y="' + (top + 12) + '" width="' + (right - left) + '" height="' + (bottom - top) + '" rx="14"/><rect class="plane-surface" x="' + left + '" y="' + top + '" width="' + (right - left) + '" height="' + (bottom - top) + '" rx="14"/><g class="plane-grid">' + grid + '</g><text class="plane-label" x="' + (left + 28) + '" y="' + (top + 44) + '">' + String(index + 1).padStart(2, '0') + '  ' + esc(wrap(layer.name, 12, 1)[0]) + '</text><text class="plane-caption" x="' + (right - 190) + '" y="' + (top + 44) + '">' + (active ? '当前编辑层' : '点击左侧切换图层') + '</text></g>';
+}
+function diagramControls(w, h, selected) {
+  const handles = selected ? `<g class="resize-controls"><rect class="selection-outline" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}"/>` + [['nw', -w, -h], ['n', 0, -h], ['ne', w, -h], ['e', w, 0], ['se', w, h], ['s', 0, h], ['sw', -w, h], ['w', -w, 0]].map(([dir, x, y]) => `<circle class="resize-handle" data-resize="${dir}" cx="${x}" cy="${y}" r="9"><title>拖动调整大小</title></circle>`).join('') + '</g>' : '';
+  const ports = '<g class="connection-controls">' + ['n', 'e', 's', 'w'].map(port => {
+    const v = portVector(port), angle = { e: 0, s: 90, w: 180, n: -90 }[port];
+    return `<g class="connection-port" data-port="${port}" transform="translate(${v.x * (w + 37)},${v.y * (h + 37)}) rotate(${angle})"><title>拖向另一图形建立箭头</title><rect x="-24" y="-22" width="48" height="44" fill="transparent"/><path d="M-20 -6H1V-15L22 0L1 15V6H-20Z"/></g>`;
+  }).join('') + '</g>';
+  return handles + ports;
+}
+function nodeMarkup(n, selected, active, linked, connecting) {
+  const { w, h } = nodeSize(n);
+  const variant = n.kind === 'result' ? n.title.startsWith('✓') ? 'success' : n.title.startsWith('×') ? 'warning' : 'neutral' : n.kind;
+  const icon = { agent: '◈', input: '▧', decision: '◇', success: '✓', warning: '!', neutral: '↻' }[variant];
+  const vertices = shapePolygon(n);
+  const back = {
+    rounded: `<rect class="node-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="15"/>`,
+    rectangle: `<rect class="node-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="2"/>`,
+    diamond: `<path class="node-back" d="M0 ${-h}L${w} 0L0 ${h}L${-w} 0Z"/>`,
+    ellipse: `<ellipse class="node-back" rx="${w}" ry="${h}"/>`,
+    parallelogram: `<path class="node-back" d="M${-w * .75} ${-h}H${w}L${w * .75} ${h}H${-w}Z"/>`,
+    text: `<rect class="node-back text-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="3"/>`,
+  }[n.shape] || (vertices ? `<path class="node-back" d="M${vertices.map(pt).join('L')}Z"/>` : '');
+  const compact = ['diamond', 'ellipse', 'parallelogram', 'text'].includes(n.shape);
+  const content = n.kind === 'shape'
+    ? textLines(n.title, 0, n.description ? -10 : 8, 7, 'node-title centered', 25) + (n.description ? textLines(n.description, 0, 20, 7, 'node-description centered', 25) : '')
+    : compact
+    ? '<text class="node-title centered" x="0" y="-12">' + esc(wrap(n.title, 7, 1)[0]) + '</text>' + textLines(n.description, 0, 16, n.shape === 'diamond' ? 5 : 6.3, 'node-description centered', 25)
+    : '<text class="node-icon" x="-81" y="-23">' + icon + '</text><text class="node-title" x="-48" y="-23">' + esc(wrap(n.title, 5.7, 1)[0]) + '</text>' + textLines(n.description, -80, 9, 6.7, 'node-description', 26);
+  const base = n.shape === 'diamond' ? { w: 130, h: 90 } : n.shape === 'ellipse' ? { w: 105, h: 70 } : { w: 100, h: 56 };
+  const textScale = Math.min(1, w / base.w, h / base.h);
+  const boundary = back.replace(/class="[^"]*"/, 'class="connection-boundary" data-free-port="true"');
+  return '<g transform="translate(' + n.x + ',' + n.y + ')" class="diagram-node ' + variant + (selected ? ' selected' : '') + (active ? '' : ' dimmed') + (connecting ? ' connecting' : '') + '" data-node="' + esc(n.id) + '" data-object="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.title) + '，' + esc(n.description) + '"><title>' + esc(n.title) + '：' + esc(n.description) + '。内部拖动移动，边缘拖出连线，双击编辑。</title>' + back + boundary + `<g class="node-text" transform="scale(${textScale})">` + content + '</g>' + (linked ? '<circle class="linked-dot" cx="0" cy="' + h + '" r="5"/>' : '') + diagramControls(w, h, selected) + '</g>';
+}
+function edgeMarkup(e, a, b, d, label, selected, active, transform = '') {
+  const dashed = e.style === 'dashed';
+  return '<g class="flow-edge ' + (dashed ? 'data-link ' : '') + (selected ? 'selected ' : '') + (active ? '' : 'dimmed') + '" data-edge="' + esc(e.id) + '" data-label-x="' + label.x + '" data-label-y="' + label.y + '" data-label-transform="' + transform + '" tabindex="0" role="button" aria-label="连线 ' + esc(a.title) + ' 到 ' + esc(b.title) + '"><title>单击选中 · 双击编辑分支文字 · Delete 删除</title><path class="edge-hit data-link-hit" d="' + d + '"/><path class="edge-line' + (dashed ? ' data-link-line' : '') + '" d="' + d + '" marker-end="url(#' + (dashed ? 'data-arrow' : 'flow-arrow') + ')"/>' + (e.label ? '<text class="edge-label" transform="' + transform + '" x="' + label.x + '" y="' + label.y + '">' + esc(e.label) + '</text>' : '') + '</g>';
+}
+function localEdge(e, a, b, selected, active) {
+  const dx = b.x - a.x, dy = b.y - a.y, sa = nodeSize(a), sb = nodeSize(b);
+  let start, end, d, label;
+  if (e.sourcePort || e.targetPort) {
+    const sp = e.sourcePort || nearestPort(a, b), tp = e.targetPort || nearestPort(b, a);
+    start = portPoint(a, sp); end = portPoint(b, tp);
+    const sv = portDirection(a, sp), tv = portDirection(b, tp), bend = Math.max(50, Math.hypot(end.x - start.x, end.y - start.y) * .4);
+    const c1 = { x: start.x + sv.x * bend, y: start.y + sv.y * bend }, c2 = { x: end.x + tv.x * bend, y: end.y + tv.y * bend };
+    d = `M${pt(start)} C${pt(c1)} ${pt(c2)} ${pt(end)}`;
+    label = { x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8, y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8 - 16 };
+  } else if (Math.abs(dx) >= Math.abs(dy) * .95) {
+    const s = Math.sign(dx) || 1;
+    start = { x: a.x + sa.w * s, y: a.y }; end = { x: b.x - (sb.w + 4) * s, y: b.y };
+    const mid = (start.x + end.x) / 2;
+    d = 'M' + pt(start) + ' C' + mid + ',' + start.y + ' ' + mid + ',' + end.y + ' ' + pt(end);
+    label = { x: mid, y: (start.y + end.y) / 2 - 16 };
+  } else {
+    const s = Math.sign(dy) || 1;
+    start = { x: a.x, y: a.y + sa.h * s }; end = { x: b.x, y: b.y - (sb.h + 4) * s };
+    const mid = (start.y + end.y) / 2;
+    d = 'M' + pt(start) + ' C' + start.x + ',' + mid + ' ' + end.x + ',' + mid + ' ' + pt(end);
+    label = { x: (start.x + end.x) / 2 + (Math.abs(dx) < 50 ? 68 : 0), y: mid - 14 };
+  }
+  return edgeMarkup(e, a, b, d, label, selected, active);
+}
+function tableMarkup(table, selected) {
+  const { width: w, height: h } = table;
+  const header = Math.min(48, h * .22), colHeight = Math.min(38, h * .18);
+  const count = Math.min(table.cells.length, Math.max(1, Math.floor((h - header - colHeight - 22) / 28)));
+  const rowHeight = (h - header - colHeight - (table.cells.length > count ? 22 : 0)) / Math.max(count, 1);
+  const cw = w / table.columns.length, limit = Math.max(1, (cw - 18) / 17);
+  let grid = '', content = '';
+  table.columns.forEach((column, i) => {
+    if (i) grid += `<path class="table-rule" d="M${cw * i} ${header}V${h}"/>`;
+    content += `<text class="table-col" x="${cw * i + 10}" y="${header + colHeight * .68}">${esc(wrap(column, limit, 1)[0])}</text>`;
+  });
+  table.cells.slice(0, count).forEach((row, r) => {
+    const y = header + colHeight + r * rowHeight;
+    grid += `<path class="table-rule" d="M0 ${y}H${w}"/>`;
+    content += row.map((cell, c) => `<text class="table-cell" x="${cw * c + 10}" y="${y + rowHeight * .65}">${esc(wrap(cell, limit, 1)[0])}</text>`).join('');
+  });
+  return `<g class="shared-table ${selected ? 'selected' : ''}" transform="translate(${table.x},${table.y})" data-table="${esc(table.id)}" data-object="${esc(table.id)}" tabindex="0" role="button" aria-label="表格 ${esc(table.title)}"><title>拖动移动 · 双击编辑标题和内容 · 蓝色手柄缩放 · 四向箭头连线</title><g class="table-content"><rect class="table-body" width="${w}" height="${h}" rx="8"/><rect class="table-header" y="${header}" width="${w}" height="${colHeight}"/><text class="table-title" x="16" y="${header * .68}">${esc(wrap(table.title, Math.max(1, (w - 32) / 22), 1)[0])}</text>${grid}${content}${table.cells.length > count ? `<text class="table-footnote" x="12" y="${h - 7}">显示 ${count} / ${table.cells.length} 行 · 双击编辑全部</text>` : ''}</g><rect class="connection-boundary" data-free-port="true" width="${w}" height="${h}" rx="8"/><g class="table-controls" transform="translate(${w / 2},${h / 2})">${diagramControls(w / 2, h / 2, selected)}</g></g>`;
+}
+export function renderScene(svg, doc, camera, selection, showRelations, connectSource, activeLayerId) {
+  const selectedIds = new Set(selection?.type === 'multi' ? selection.ids : ['node', 'table'].includes(selection?.type) ? [selection.id] : []);
+  const selectedNode = ['node', 'table'].includes(selection?.type) ? selection.id : null;
+  const relatedNodes = new Set([selectedNode]);
+  for (const e of doc.edges) if (e.source === selectedNode || e.target === selectedNode) { relatedNodes.add(e.source); relatedNodes.add(e.target); }
+  const relatedAgents = new Set(doc.edges.filter(e => e.style === 'dashed').flatMap(e => [e.source, e.target]));
+  const visibleLayers = doc.layers.filter(layer => camera.mode !== 'flat' || layer.id === activeLayerId);
+  const visibleIds = new Set(visibleLayers.map(layer => layer.id));
+  const byId = new Map(doc.nodes.map(n => [n.id, n]));
+  doc.tables.forEach(t => byId.set(t.id, tableObject(doc, t.id)));
+  const visibleEdges = doc.edges.filter(e => (showRelations || e.style !== 'dashed') && visibleIds.has(byId.get(e.source).layerId) && visibleIds.has(byId.get(e.target).layerId));
+  const defs = '<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#858585"/></marker><marker id="data-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#666666"/></marker><filter id="node-shadow" x="-30%" y="-40%" width="160%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#333333" flood-opacity="0.12"/></filter></defs>';
+  const sorted = camera.mode === 'spatial' && Math.cos(radians(camera.tilt)) < 0 ? [...visibleLayers] : [...visibleLayers].reverse();
+  const bridges = new Map(doc.layers.map(layer => [layer.id, []]));
+  const sameLayerLinks = new Map(doc.layers.map(layer => [layer.id, []]));
+  function placeLink(html, first, second) {
+    if (first === second) sameLayerLinks.get(first).push(html);
+    else {
+      const upper = [...sorted].reverse().find(layer => layer.id === first || layer.id === second);
+      bridges.get(upper.id).push(html);
+    }
+  }
+  visibleEdges.filter(e => e.style === 'dashed').forEach(e => {
+    const a = byId.get(e.source), b = byId.get(e.target);
+    const siblings = visibleEdges.filter(other => other.style === 'dashed' && other.target === e.target);
+    const start = portPoint(a, e.sourcePort || 's'), end = portPoint(b, e.targetPort || 'n');
+    if (b.kind === 'table' && !e.targetPort) end.x = b.x - b.width * .35 + b.width * .7 * (siblings.indexOf(e) + .5) / siblings.length;
+    const p = project(start.x, start.y, layerZ(doc, a.layerId, camera), camera);
+    const q = project(end.x, end.y, layerZ(doc, b.layerId, camera), camera);
+    const direction = Math.sign(q.y - p.y) || 1;
+    const { d, label } = typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: `M${pt(p)} C${p.x},${p.y + direction * 85} ${q.x},${q.y - direction * 85} ${pt(q)}`, label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 } };
+    placeLink(edgeMarkup(e, a, b, d, label, selection?.id === e.id, !selectedNode || a.id === selectedNode || b.id === selectedNode), a.layerId, b.layerId);
+  });
+  visibleEdges.filter(e => e.style !== 'dashed' && byId.get(e.source).layerId !== byId.get(e.target).layerId).forEach(e => {
+    const a = byId.get(e.source), b = byId.get(e.target);
+    const start = portPoint(a, e.sourcePort || 's'), end = portPoint(b, e.targetPort || 'n');
+    const p = project(start.x, start.y, layerZ(doc, a.layerId, camera), camera);
+    const q = project(end.x, end.y, layerZ(doc, b.layerId, camera), camera);
+    const { d, label } = typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: 'M' + pt(p) + ' C' + p.x + ',' + ((p.y + q.y) / 2) + ' ' + q.x + ',' + ((p.y + q.y) / 2) + ' ' + pt(q), label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 - 15 } };
+    return placeLink(edgeMarkup(e, a, b, d, label, selection?.id === e.id, !selectedNode || a.id === selectedNode || b.id === selectedNode), a.layerId, b.layerId);
+  });
+  const contents = sorted.map(layer => {
+    const nodes = doc.nodes.filter(n => n.layerId === layer.id);
+    const edges = visibleEdges.filter(e => e.style !== 'dashed' && byId.get(e.source).layerId === layer.id && byId.get(e.target).layerId === layer.id).map(e => localEdge(e, byId.get(e.source), byId.get(e.target), selection?.id === e.id, !selectedNode || e.source === selectedNode || e.target === selectedNode)).join('');
+    const nodeHtml = nodes.map(n => nodeMarkup(n, selectedIds.has(n.id), !selectedNode || relatedNodes.has(n.id), relatedAgents.has(n.id), connectSource === n.id)).join('');
+    const table = doc.tables.filter(t => t.layerId === layer.id).map(t => tableMarkup(t, selectedIds.has(t.id))).join('');
+    const empty = '';
+    const matrix = planeMatrix(layerZ(doc, layer.id, camera), camera);
+    // Paint each complete layer bottom-to-top; its translucent surface dims lower contents and blocks lower hit targets.
+    return '<g data-layer-stack="' + esc(layer.id) + '">' + bridges.get(layer.id).join('') + '<g class="scene-layer" data-scene-layer="' + esc(layer.id) + '" transform="' + matrix + '">' + plane(doc, layer, doc.layers.indexOf(layer), layer.id === activeLayerId) + '</g>' + sameLayerLinks.get(layer.id).join('') + '<g class="layer-content" data-layer-content="' + esc(layer.id) + '" transform="' + matrix + '">' + edges + nodeHtml + table + empty + '</g></g>';
+  }).join('');
+  svg.innerHTML = defs + contents;
+  const points = visibleLayers.flatMap(layer => {
+    const b = layerBounds(doc, layer.id), z = layerZ(doc, layer.id, camera);
+    return [b.left, b.right].flatMap(x => [b.top, b.bottom].map(y => project(x, y, z, camera)));
+  });
+  return { left: Math.min(...points.map(p => p.x)) - 65, right: Math.max(...points.map(p => p.x)) + 65, top: Math.min(...points.map(p => p.y)) - 65, bottom: Math.max(...points.map(p => p.y)) + 65 };
+}

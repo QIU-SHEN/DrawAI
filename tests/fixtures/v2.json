@@ -1,0 +1,243 @@
+{
+  "version": 2,
+  "layers": [
+    {
+      "id": "flow",
+      "name": "业务流程"
+    },
+    {
+      "id": "data",
+      "name": "共享数据"
+    }
+  ],
+  "table": {
+    "layerId": "data",
+    "x": -610,
+    "y": -100
+  },
+  "nodes": [
+    {
+      "id": "standard",
+      "kind": "input",
+      "title": "标准图",
+      "description": "已框选商品区域",
+      "x": -650,
+      "y": -105,
+      "layerId": "flow",
+      "shape": "rectangle"
+    },
+    {
+      "id": "photo",
+      "kind": "input",
+      "title": "现场图",
+      "description": "当前门店陈列照片",
+      "x": -650,
+      "y": 145,
+      "layerId": "flow",
+      "shape": "rectangle"
+    },
+    {
+      "id": "agent2",
+      "kind": "agent",
+      "title": "AGENT 2",
+      "description": "比对图片，识别缺货差异",
+      "x": -395,
+      "y": 0,
+      "layerId": "flow",
+      "shape": "rounded"
+    },
+    {
+      "id": "blur",
+      "kind": "decision",
+      "title": "图片模糊",
+      "description": "图片质量检查",
+      "x": -395,
+      "y": -245,
+      "layerId": "flow",
+      "shape": "diamond"
+    },
+    {
+      "id": "retake",
+      "kind": "result",
+      "title": "重拍",
+      "description": "重新采集现场图",
+      "x": -140,
+      "y": -245,
+      "layerId": "flow",
+      "shape": "ellipse"
+    },
+    {
+      "id": "agent3",
+      "kind": "agent",
+      "title": "AGENT 3",
+      "description": "判断未上架或位置变化",
+      "x": -125,
+      "y": 245,
+      "layerId": "flow",
+      "shape": "rounded"
+    },
+    {
+      "id": "pass1",
+      "kind": "result",
+      "title": "✓1 上架通过",
+      "description": "当前商品已上架",
+      "x": 130,
+      "y": 0,
+      "layerId": "flow",
+      "shape": "ellipse"
+    },
+    {
+      "id": "agent4",
+      "kind": "agent",
+      "title": "AGENT 4",
+      "description": "判断腰封是否符合标准",
+      "x": 395,
+      "y": 0,
+      "layerId": "flow",
+      "shape": "rounded"
+    },
+    {
+      "id": "pass2",
+      "kind": "result",
+      "title": "✓2 合格",
+      "description": "腰封符合标准",
+      "x": 660,
+      "y": 0,
+      "layerId": "flow",
+      "shape": "ellipse"
+    },
+    {
+      "id": "fail2",
+      "kind": "result",
+      "title": "×2 不合格",
+      "description": "腰封需要调整",
+      "x": 660,
+      "y": 245,
+      "layerId": "flow",
+      "shape": "ellipse"
+    },
+    {
+      "id": "sku",
+      "kind": "input",
+      "title": "确认 SKU",
+      "description": "读取商品区域编号",
+      "x": 145,
+      "y": 300,
+      "layerId": "flow",
+      "shape": "rectangle"
+    },
+    {
+      "id": "missing",
+      "kind": "result",
+      "title": "× 缺货",
+      "description": "记录待补货商品",
+      "x": 400,
+      "y": 300,
+      "layerId": "flow",
+      "shape": "ellipse"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-0",
+      "source": "standard",
+      "target": "agent2",
+      "label": ""
+    },
+    {
+      "id": "edge-1",
+      "source": "photo",
+      "target": "agent2",
+      "label": ""
+    },
+    {
+      "id": "edge-2",
+      "source": "agent2",
+      "target": "blur",
+      "label": ""
+    },
+    {
+      "id": "edge-3",
+      "source": "blur",
+      "target": "retake",
+      "label": ""
+    },
+    {
+      "id": "edge-4",
+      "source": "agent2",
+      "target": "pass1",
+      "label": "无缺货差异"
+    },
+    {
+      "id": "edge-5",
+      "source": "agent2",
+      "target": "agent3",
+      "label": "存在差异"
+    },
+    {
+      "id": "edge-6",
+      "source": "agent3",
+      "target": "pass1",
+      "label": "已上架"
+    },
+    {
+      "id": "edge-7",
+      "source": "agent3",
+      "target": "sku",
+      "label": "未上架"
+    },
+    {
+      "id": "edge-8",
+      "source": "sku",
+      "target": "missing",
+      "label": ""
+    },
+    {
+      "id": "edge-9",
+      "source": "pass1",
+      "target": "agent4",
+      "label": ""
+    },
+    {
+      "id": "edge-10",
+      "source": "agent4",
+      "target": "pass2",
+      "label": ""
+    },
+    {
+      "id": "edge-11",
+      "source": "agent4",
+      "target": "fail2",
+      "label": ""
+    }
+  ],
+  "rows": [
+    {
+      "id": "check1",
+      "item": "图片差异",
+      "status": "待检查",
+      "agentIds": [
+        "agent2"
+      ],
+      "note": ""
+    },
+    {
+      "id": "check2",
+      "item": "上架状态",
+      "status": "待检查",
+      "agentIds": [
+        "agent3"
+      ],
+      "note": ""
+    },
+    {
+      "id": "check3",
+      "item": "腰封标准",
+      "status": "待检查",
+      "agentIds": [
+        "agent4"
+      ],
+      "note": ""
+    }
+  ]
+}

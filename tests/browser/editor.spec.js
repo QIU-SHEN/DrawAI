@@ -11,9 +11,9 @@ test('example renders in 3D; flat switch, camera, zoom and screenshots', async (
   await expect(page.locator('.data-link')).toHaveCount(3);
   await expect(page.locator('#view-spatial')).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: 'test-results/prototype-spatial.png', fullPage: true });
-  const before = await page.locator('[data-layer-content="flow"]').getAttribute('transform');
+  await expect(page.locator('[data-layer-content="flow"] svg[data-projection]')).toHaveCount(1);
   await page.locator('#view-flat').click();
-  expect(await page.locator('[data-layer-content="flow"]').getAttribute('transform')).not.toBe(before);
+  await expect(page.locator('svg[data-projection]')).toHaveCount(0);
   await expect(page.locator('.scene-layer')).toHaveCount(1);
   await expect(page.locator('.shared-table')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/prototype-flat.png', fullPage: true });
@@ -160,11 +160,11 @@ test('double click opens name editing, literal HTML stays text, type change pres
 
 test('text follows its plane, 3D blank dragging rotates, flat dragging pans only the current layer', async ({ page }) => {
   await page.locator('#tool-drag').click();
-  const getMatrix = selector => page.locator(selector).evaluate(el => { const m = el.getCTM(); return { a: m.a, b: m.b, c: m.c, d: m.d }; });
+  const getMatrix = selector => page.locator(selector).evaluate(el => { const plane = el.closest('svg[data-projection]') || el.querySelector('svg[data-projection]'); return plane ? plane.dataset.projection.split(',').map(Number) : null; });
   const nodeMatrix = await getMatrix('[data-node="agent2"] .node-title');
   const planeMatrix = await getMatrix('[data-scene-layer="flow"]');
   expect(nodeMatrix).toEqual(planeMatrix);
-  expect(Math.abs(nodeMatrix.b)).toBeGreaterThan(.01);
+  expect(Math.abs(nodeMatrix[1])).toBeGreaterThan(.01);
   expect(await getMatrix('.shared-table .table-title')).toEqual(await getMatrix('[data-scene-layer="data"]'));
   // Check drag direction from a front-facing yaw, before an orbit turns past a point's horizontal extremum.
   await page.locator('#camera-toggle').click();
@@ -175,11 +175,11 @@ test('text follows its plane, 3D blank dragging rotates, flat dragging pans only
     await page.mouse.move(rect.x + 40, rect.y + 30); await page.mouse.down();
     await page.mouse.move(rect.x + 180, rect.y + 65, { steps: 8 }); await page.mouse.up();
   };
-  const before = await page.locator('[data-layer-content="flow"]').getAttribute('transform');
+  const before = await page.locator('[data-layer-content="flow"] svg[data-projection]').getAttribute('data-projection');
   const boxBefore = await page.locator('#scene').getAttribute('viewBox');
   const frontBefore = await page.locator('[data-node="missing"]').boundingBox();
   await dragBlank();
-  expect(await page.locator('[data-layer-content="flow"]').getAttribute('transform')).not.toBe(before);
+  expect(await page.locator('[data-layer-content="flow"] svg[data-projection]').getAttribute('data-projection')).not.toBe(before);
   expect(await page.locator('#scene').getAttribute('viewBox')).toBe(boxBefore);
   const frontAfter = await page.locator('[data-node="missing"]').boundingBox();
   expect(frontAfter.x + frontAfter.width / 2).toBeGreaterThan(frontBefore.x + frontBefore.width / 2);
@@ -191,7 +191,7 @@ test('text follows its plane, 3D blank dragging rotates, flat dragging pans only
   const flatBefore = await page.locator('#scene').getAttribute('viewBox');
   await dragBlank();
   expect(await page.locator('#scene').getAttribute('viewBox')).not.toBe(flatBefore);
-  await expect(page.locator('[data-layer-content="flow"]')).toHaveAttribute('transform', 'matrix(1 0 0 1 0 0)');
+  await expect(page.locator('svg[data-projection]')).toHaveCount(0);
   await page.locator('[data-select-layer="data"]').click();
   await expect(page.locator('.scene-layer')).toHaveCount(1);
   await expect(page.locator('.diagram-node')).toHaveCount(0);
@@ -225,9 +225,11 @@ for (const mode of ['flat', 'spatial']) test(`palette drag creates the chosen sh
   await dragTemplate(page, 'diamond', x, y);
   const doc = await stored(page), added = doc.nodes.at(-1);
   expect(added.shape).toBe('diamond'); expect(added.kind).toBe('shape'); expect(added.layerId).toBe('flow');
-  const box = await page.locator('[data-node="' + added.id + '"]').boundingBox();
-  expect(Math.abs(box.x + box.width / 2 - x)).toBeLessThan(8);
-  expect(Math.abs(box.y + box.height / 2 - y)).toBeLessThan(8);
+  const center = await page.locator('[data-node="' + added.id + '"]').evaluate(async el => {
+    const { elementScreenPoint } = await import('/src/scene.js'); const p = elementScreenPoint(el, { x: 0, y: 0 }); return { x: p.x, y: p.y };
+  });
+  expect(Math.abs(center.x - x)).toBeLessThan(8);
+  expect(Math.abs(center.y - y)).toBeLessThan(8);
   await expect(page.locator('#palette-ghost')).toBeHidden();
   await page.locator('#undo').click();
   await expect(page.locator('.diagram-node')).toHaveCount(12);

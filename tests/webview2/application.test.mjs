@@ -119,7 +119,7 @@ test('WebView2 keeps graph movement, resize, arrows, editable tables and 3D rota
   const base = path.resolve('.local/webview2-tests'); await mkdir(base, { recursive: true }); const dir = await mkdtemp(path.join(base, '交互 '));
   const file = path.join(dir, '画布.drawai'); await writeFile(file, JSON.stringify({ format: 'drawai', version: 1, workspaceName: '测试图表', document: exampleDocument(), view: { mode: 'spatial' } }));
   const host = await launchWebView(file), page=host.page;
-  const position = (selector,x,y) => page.locator(selector).evaluate((el,p)=>{const q=new DOMPoint(p.x,p.y).matrixTransform(el.getScreenCTM());return {x:q.x,y:q.y};},{x,y});
+  const position = (selector,x,y) => page.locator(selector).evaluate(async(el,p)=>{const {elementScreenPoint}=await import("/src/scene.js");const q=elementScreenPoint(el,p);return {x:q.x,y:q.y};},{x,y});
   const drag = async(a,b)=>{await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:12});await page.mouse.up();};
   const saved = async()=>{await page.locator('#desktop-save').click();await expect(page.locator('#save-status')).toHaveText('已保存到文件');return JSON.parse(await readFile(file,'utf8')).document;};
   try {

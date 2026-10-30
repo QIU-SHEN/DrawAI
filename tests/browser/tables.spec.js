@@ -112,7 +112,7 @@ test('second table moves and resizes independently and can connect to another ta
   const base = { ...exampleDocument().tables[0], layerId: 'flow', width: 600, height: 260, y: 0 };
   const fixture = { ...exampleDocument(), nodes: [], edges: [], tables: [{ ...base, id: 'first', x: -720 }, { ...structuredClone(base), id: 'second', x: 100 }] };
   await load(page, fixture); await flat(page);
-  const point = (id, x, y) => page.locator(`[data-table="${id}"]`).evaluate((el, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); return { x: q.x, y: q.y }; }, { x, y });
+  const point = (id, x, y) => page.locator(`[data-table="${id}"]`).evaluate(async (el, p) => { const { elementScreenPoint } = await import("/src/scene.js"); const q = elementScreenPoint(el, { x: p.x, y: p.y }); return { x: q.x, y: q.y }; }, { x, y });
   const drag = async (a, b) => { await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 12 }); await page.mouse.up(); };
   await drag(await point('second', 300, 120), await point('second', 330, 145));
   expect((await stored(page)).tables[1].x).toBeCloseTo(130, 0);

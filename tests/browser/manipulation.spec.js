@@ -3,8 +3,8 @@ import { exampleDocument } from '../fixtures/example.mjs';
 const key = 'drawai.document.v1';
 const stored = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
 async function point(page, selector, x = 0, y = 0) {
-  return page.locator(selector).evaluate((el, { x, y }) => {
-    const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()); return { x: p.x, y: p.y };
+  return page.locator(selector).evaluate(async (el, { x, y }) => { const { elementScreenPoint } = await import("/src/scene.js");
+    const p = elementScreenPoint(el, { x: x, y: y }); return { x: p.x, y: p.y };
   }, { x, y });
 }
 async function dragTo(page, a, b) {
@@ -43,9 +43,9 @@ for (const mode of ['flat', 'spatial']) test(`drag a directional arrow to connec
   const saved = await stored(page), edge = saved.edges.find(e => e.source === 'standard' && e.target === 'retake');
   expect(edge.sourcePort).toBe('n'); expect(edge.targetPort).toBe('w');
   await expect(page.locator('#inspector')).toBeHidden();
-  const edgePoint = await page.locator(`[data-edge="${edge.id}"] .edge-line`).evaluate(el => {
+  const edgePoint = await page.locator(`[data-edge="${edge.id}"] .edge-line`).evaluate(async el => { const { elementScreenPoint } = await import("/src/scene.js");
     for (let t = .1; t < 1; t += .1) {
-      const local = el.getPointAtLength(el.getTotalLength() * t), p = new DOMPoint(local.x, local.y).matrixTransform(el.getScreenCTM());
+      const local = el.getPointAtLength(el.getTotalLength() * t), p = elementScreenPoint(el, { x: local.x, y: local.y });
       if (document.elementFromPoint(p.x, p.y)?.closest('[data-edge]') === el.parentElement) return { x: p.x, y: p.y };
     }
     throw new Error('No exposed segment of the new edge');
@@ -133,8 +133,8 @@ test('slightly translucent upper plane still blocks picking lower nodes in its o
 
 test('branch text accepts Chinese composition, cancels with Escape and saves outside', async ({ page }) => {
   await page.locator('#view-flat').click();
-  const p = await page.locator('[data-edge="edge-4"] .edge-line').evaluate(el => {
-    const q = el.getPointAtLength(el.getTotalLength() * .55), point = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM());
+  const p = await page.locator('[data-edge="edge-4"] .edge-line').evaluate(async el => { const { elementScreenPoint } = await import("/src/scene.js");
+    const q = el.getPointAtLength(el.getTotalLength() * .55), point = elementScreenPoint(el, { x: q.x, y: q.y });
     return { x: point.x, y: point.y };
   });
   await page.mouse.dblclick(p.x, p.y);

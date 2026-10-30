@@ -13,7 +13,7 @@ async function load(page, mode = 'flat', doc = fixture(mode)) {
   await page.locator(`#view-${mode}`).click();
 }
 async function point(page, selector, x = 0, y = 0) {
-  return page.locator(selector).evaluate((el, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); return { x: q.x, y: q.y }; }, { x, y });
+  return page.locator(selector).evaluate(async (el, p) => { const { elementScreenPoint } = await import("/src/scene.js"); const q = elementScreenPoint(el, { x: p.x, y: p.y }); return { x: q.x, y: q.y }; }, { x, y });
 }
 async function drag(page, a, b, finish = true) {
   await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 12 }); if (finish) await page.mouse.up();
@@ -28,8 +28,8 @@ for (const mode of ['flat', 'spatial']) test(`free border-to-table anchors and e
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await load(page, mode); const edge = await createFreeEdge(page);
   closePort(edge.sourcePort, 1, 70 / 120); closePort(edge.targetPort, -.56, -1);
-  const tangent = await page.locator(`[data-edge="${edge.id}"] .edge-line`).evaluate(el => {
-    const at = distance => { const p = el.getPointAtLength(distance); return new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); };
+  const tangent = await page.locator(`[data-edge="${edge.id}"] .edge-line`).evaluate(async el => { const { elementScreenPoint } = await import("/src/scene.js");
+    const at = distance => { const p = el.getPointAtLength(distance); return elementScreenPoint(el, { x: p.x, y: p.y }); };
     const a = at(0), b = at(1); return { x: b.x - a.x, y: b.y - a.y };
   });
   const directionStart = await point(page, '[data-node="a"]', 180, 70), directionEnd = await point(page, '[data-node="a"]', 200, 70);

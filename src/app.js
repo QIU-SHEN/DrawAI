@@ -1,5 +1,5 @@
 import { STORAGE_KEY, createTable, getDiagramObject, updateDiagramObject, kinds, shapes, clone, uid, blankDocument, removeNode, removeLayer, addEdge, validateDocument, validateDiagramFile, History } from './model.js';
-import { renderScene, wrapAngle, canEditPlane, unprojectDelta, unprojectPoint, layerZ, planeMatrix, project, nodeSize, portPoint, freePort, escapeHtml as esc } from './scene.js';
+import { renderScene, wrapAngle, canEditPlane, unprojectDelta, unprojectPoint, layerZ, planeMarkup, perspectiveDistance, elementScreenPoint, project, nodeSize, portPoint, freePort, escapeHtml as esc } from './scene.js';
 
 const $ = id => document.getElementById(id);
 const svg = $('scene');
@@ -227,6 +227,7 @@ function scene(refit = false) {
     const edge = doc.edges.find(e => e.id === selection.id);
     if (!edge || (!showRelations && edge.style === 'dashed') || (camera.mode === 'flat' && [edge.source, edge.target].some(id => getDiagramObject(doc, id)?.layerId !== activeLayerId))) selection = null;
   }
+  if (!fitBounds || refit) camera.distance = perspectiveDistance(doc, camera);
   const bounds = renderScene(svg, doc, camera, selection, showRelations, connectSource, activeLayerId);
   svg.classList.toggle('multi-selection', selection?.type === 'multi');
   svg.dataset.tool = pointerTool;
@@ -605,7 +606,7 @@ function newNode(templateId, position = null) {
   } else if (template.id !== 'table') { beginInlineEdit(selection.id); } else { beginTableEdit(selection.id); }
 }
 function dropPoint(event) {
-  if (!canEditPlane(camera)) return null;
+  if (!canEditPlane(camera, layerZ(doc, activeLayerId, camera))) return null;
   const rect = svg.getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return null;
   const p = worldPoint(event);
@@ -635,8 +636,7 @@ document.addEventListener('pointermove', event => {
   if (position) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.setAttribute('class', 'drop-preview');
-    group.setAttribute('transform', planeMatrix(layerZ(doc, activeLayerId, camera), camera));
-    group.innerHTML = '<rect x="' + (position.x - 100) + '" y="' + (position.y - 56) + '" width="200" height="112" rx="10"/><path d="M' + (position.x - 15) + ' ' + position.y + 'h30M' + position.x + ' ' + (position.y - 15) + 'v30"/>';
+    group.innerHTML = planeMarkup('<rect x="' + (position.x - 100) + '" y="' + (position.y - 56) + '" width="200" height="112" rx="10"/><path d="M' + (position.x - 15) + ' ' + position.y + 'h30M' + position.x + ' ' + (position.y - 15) + 'v30"/>', layerZ(doc, activeLayerId, camera), camera);
     svg.append(group);
   }
 });
@@ -685,27 +685,31 @@ function hitNode(event) {
     if (!svg.contains(element)) return null;
     if (element.closest('.edge-endpoint,.connection-preview,.anchor-preview')) continue;
     const object = element.closest('[data-object]');
-    if (object) return object.dataset.object;
+    if (object) return editableObject(object.dataset.object) ? object.dataset.object : null;
     // Do not connect through an occluding upper plane.
     if (element.closest('[data-scene-layer]')) return null;
   }
   return null;
 }
+function editableObject(id) {
+  const object = getDiagramObject(doc, id);
+  return object && canEditPlane(camera, layerZ(doc, object.layerId, camera));
+}
 function edgeEndPoint(id, end) {
   const path = svg.querySelector('[data-edge="' + id + '"] .edge-line');
   if (!path) return null;
   const point = path.getPointAtLength(end === 'source' ? 0 : path.getTotalLength());
-  return new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()).matrixTransform(svg.getScreenCTM().inverse());
+  return elementScreenPoint(path, point).matrixTransform(svg.getScreenCTM().inverse());
 }
 function renderEdgeHandles() {
   svg.querySelectorAll('.edge-endpoint').forEach(el => el.remove());
-  if (selection?.type !== 'edge' || !canEditPlane(camera)) return;
+  if (selection?.type !== 'edge') return;
   const edge = doc.edges.find(e => e.id === selection.id);
   if (!edge) return;
   const radius = 6 * svg.viewBox.baseVal.width / Math.max(svg.getBoundingClientRect().width, 1);
   for (const end of ['source', 'target']) {
     const p = edgeEndPoint(edge.id, end), object = getDiagramObject(doc, edge[end]);
-    if (!p || !object) continue;
+    if (!p || !object || !editableObject(object.id)) continue;
     const screen = new DOMPoint(p.x, p.y).matrixTransform(svg.getScreenCTM());
     const stacks = [...svg.querySelectorAll('[data-layer-stack]')].map(el => el.dataset.layerStack);
     const surface = document.elementsFromPoint(screen.x, screen.y).find(el => !el.closest('.flow-edge,.edge-endpoint,.anchor-preview') && el.closest('[data-layer-content],[data-scene-layer]'));
@@ -770,17 +774,16 @@ function updateSpatialDrag(event) {
   svg.querySelectorAll('.drop-plane').forEach(el => el.classList.remove('drop-plane'));
   const targetLayer = layerId || node.layerId;
   const p = worldPoint(event);
-  const center = project(node.x, node.y, layerZ(doc, node.layerId, camera), camera);
-  const local = unprojectPoint(p.x - drag.start.x + center.x, p.y - drag.start.y + center.y, layerZ(doc, targetLayer, camera), camera);
-  drag.position = { x: Math.max(-9000, Math.min(9000, Math.round(local.x))), y: Math.max(-9000, Math.min(9000, Math.round(local.y))) };
+  const grabbed = unprojectPoint(drag.start.x, drag.start.y, layerZ(doc, node.layerId, camera), camera);
+  const local = unprojectPoint(p.x, p.y, layerZ(doc, targetLayer, camera), camera);
+  drag.position = { x: Math.max(-9000, Math.min(9000, Math.round(node.x + local.x - grabbed.x))), y: Math.max(-9000, Math.min(9000, Math.round(node.y + local.y - grabbed.y))) };
   const wrapper = document.createElementNS(svg.namespaceURI, 'g');
   wrapper.setAttribute('class', 'drag-preview');
-  wrapper.setAttribute('transform', planeMatrix(layerZ(doc, targetLayer, camera), camera));
   const ghost = svg.querySelector('[data-object="' + drag.id + '"]').cloneNode(true);
   ghost.removeAttribute('data-node'); ghost.removeAttribute('data-object'); ghost.removeAttribute('data-table'); ghost.removeAttribute('tabindex'); ghost.classList.remove('dragging-node');
   ghost.setAttribute('transform', 'translate(' + (drag.position.x - (node.kind === 'table' ? node.width / 2 : 0)) + ',' + (drag.position.y - (node.kind === 'table' ? node.height / 2 : 0)) + ')');
   ghost.querySelectorAll('.resize-controls,.connection-controls').forEach(el => el.remove());
-  wrapper.append(ghost); svg.append(wrapper);
+  wrapper.innerHTML = planeMarkup(ghost.outerHTML, layerZ(doc, targetLayer, camera), camera); svg.append(wrapper);
   if (layerId) svg.querySelector('[data-plane-layer="' + layerId + '"]').classList.add('drop-plane');
   const tip = $('palette-ghost'); tip.hidden = false;
   tip.style.left = (event.clientX + 18) + 'px'; tip.style.top = (event.clientY + 18) + 'px';
@@ -790,7 +793,7 @@ function updateConnectionDrag(event) {
   svg.querySelectorAll('.connection-preview,.anchor-preview').forEach(el => el.remove());
   svg.querySelectorAll('.connection-target').forEach(el => el.classList.remove('connection-target'));
   const editing = drag.kind === 'endpoint', source = getDiagramObject(doc, editing ? drag.otherId : drag.id);
-  const targetId = canEditPlane(camera) ? hitNode(event) : null;
+  const targetId = hitNode(event);
   const target = targetId !== source.id ? getDiagramObject(doc, targetId) : null;
   drag.target = target?.id || null;
   const start = editing ? null : portPoint(source, drag.port);
@@ -812,11 +815,12 @@ function updateConnectionDrag(event) {
 svg.addEventListener('pointerdown', event => {
   if (event.target.closest('.node-inline-editor,.edge-inline-editor,.table-inline-editor')) return;
   if (event.button !== 0 && event.button !== 1) return;
-  const node = canEditPlane(camera) ? event.target.closest('[data-object]') : null;
+  const candidate = event.target.closest('[data-object]');
+  const node = candidate && editableObject(candidate.dataset.object) ? candidate : null;
   const resize = event.target.closest('[data-resize]')?.dataset.resize;
   const freeBoundary = node && event.target.closest('[data-free-port]');
   const port = event.target.closest('[data-port]')?.dataset.port || (freeBoundary ? anchorAtEvent(getDiagramObject(doc, node.dataset.object), event) : null);
-  const endpoint = canEditPlane(camera) && event.target.closest('[data-edge-endpoint]');
+  const endpoint = event.target.closest('[data-edge-endpoint]');
   const object = event.target.closest('[data-edge],[data-relation-link]');
   if (event.button === 1) {
     const box = svg.viewBox.baseVal, rect = svg.getBoundingClientRect();
@@ -863,7 +867,7 @@ svg.addEventListener('pointermove', event => {
   if (!drag) {
     svg.querySelectorAll('.anchor-preview').forEach(el => el.remove());
     const object = event.target.closest('[data-object]');
-    if (object && event.target.closest('[data-free-port]') && canEditPlane(camera)) {
+    if (object && event.target.closest('[data-free-port]') && editableObject(object.dataset.object)) {
       const n = getDiagramObject(doc, object.dataset.object), port = anchorAtEvent(n, event), p = portPoint(n, port);
       anchorPreview(project(p.x, p.y, layerZ(doc, n.layerId, camera), camera), typeof port === 'string');
     }
@@ -877,16 +881,16 @@ svg.addEventListener('pointermove', event => {
   if (drag.kind === 'marquee') {
     updateMarquee(event);
   } else if (drag.kind === 'group') {
-    const p = worldPoint(event), delta = unprojectDelta(p.x - drag.start.x, p.y - drag.start.y, camera);
     const objects = drag.ids.map(id => getDiagramObject(drag.before, id));
+    const p = worldPoint(event), delta = unprojectDelta(p.x - drag.start.x, p.y - drag.start.y, camera, drag.start, layerZ(doc, objects[0].layerId, camera));
     // Clamp the whole group by the same delta to preserve relative positions.
     const dx = Math.max(...objects.map(n => -9000 - n.x), Math.min(Math.round(delta.x), ...objects.map(n => 9000 - n.x)));
     const dy = Math.max(...objects.map(n => -9000 - n.y), Math.min(Math.round(delta.y), ...objects.map(n => 9000 - n.y)));
     objects.forEach(n => updateDiagramObject(doc, n.id, { x: n.x + dx, y: n.y + dy }));
     scene();
   } else if (drag.kind === 'node' || drag.kind === 'resize') {
-    const p = worldPoint(event), delta = unprojectDelta(p.x - drag.start.x, p.y - drag.start.y, camera);
     const n = getDiagramObject(doc, drag.id);
+    const p = worldPoint(event), delta = unprojectDelta(p.x - drag.start.x, p.y - drag.start.y, camera, drag.start, layerZ(doc, n.layerId, camera));
     const minWidth = n.kind === 'table' ? 240 : 80, minHeight = n.kind === 'table' ? 100 : 60, maxSize = n.kind === 'table' ? 4000 : 2400;
     if (drag.kind === 'resize') {
       const sx = drag.handle.includes('e') ? 1 : drag.handle.includes('w') ? -1 : 0;

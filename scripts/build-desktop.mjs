@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const version = '0.3.0';
+const version = '0.5.0';
 const temporaryRoot = path.join(root, '.local', 'desktop-temp');
 await mkdir(temporaryRoot, { recursive: true });
 process.env.TEMP = temporaryRoot; process.env.TMP = temporaryRoot;

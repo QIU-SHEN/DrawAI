@@ -5,7 +5,28 @@ const TABLE_ID = 'table-shared';
 import assert from 'node:assert/strict';
 import { validateDocument, removeNode, removeLayer, addEdge, History, clone, createTable, tableObject, updateDiagramObject } from '../src/model.js';
 import { exampleDocument } from './fixtures/example.mjs';
-import { project, unprojectDelta, unprojectPoint, planeMatrix, layerZ, escapeHtml, wrapAngle, canEditPlane, freePort, portPoint, perimeterPoint, shapePolygon } from '../src/scene.js';
+import { project, unprojectDelta, unprojectPoint, planeMatrix, perspectiveDistance, layerZ, escapeHtml, wrapAngle, canEditPlane, freePort, portPoint, perimeterPoint, shapePolygon } from '../src/scene.js';
+
+test('perspective narrows the far edge toward a vanishing point; flat view retains equal widths', () => {
+  const camera = { mode: 'spatial', tilt: 60, yaw: 0, distance: 2600 };
+  const width = y => project(500, y, 0, camera).x - project(-500, y, 0, camera).x;
+  assert.ok(width(350) > width(-350) * 1.2);
+  const far = project(500, -350, 0, camera), near = project(500, 350, 0, camera);
+  const vanishingY = near.y - near.x * (near.y - far.y) / (near.x - far.x);
+  assert.ok(Math.abs(vanishingY + camera.distance / Math.tan(Math.PI / 3)) < 1e-8);
+  camera.mode = 'flat'; assert.equal(width(350), width(-350));
+});
+
+test('camera stays outside large documents through full rotations', () => {
+  const doc = exampleDocument(); doc.nodes[0].x = 9000; doc.nodes[0].y = -9000;
+  const camera = { mode: 'spatial', gap: 9000 }; camera.distance = perspectiveDistance(doc, camera);
+  for (const tilt of [0, 55, 90, 135, 180, 270]) for (const yaw of [0, 45, 90, 180, 270]) {
+    Object.assign(camera, { tilt, yaw });
+    const p = project(9000, -9000, 4500, camera);
+    assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+    assert.ok(Math.hypot(p.x, p.y) < 30000);
+  }
+});
 
 test('example and JSON round-trip retain the workflow and shared relationships', () => {
   const doc = exampleDocument();
@@ -76,7 +97,7 @@ test('drag inverse preserves displacement at different angles and both view mode
   for (const mode of ['flat', 'spatial']) for (const yaw of [-30, 0, 30]) for (const tilt of [25, 48, 65]) {
     const camera = { mode, yaw, tilt };
     const a = project(-200, 100, 320, camera), b = project(-130, 150, 320, camera);
-    const delta = unprojectDelta(b.x - a.x, b.y - a.y, camera);
+    const delta = unprojectDelta(b.x - a.x, b.y - a.y, camera, a, 320);
     assert.ok(Math.abs(delta.x - 70) < 1e-8);
     assert.ok(Math.abs(delta.y - 50) < 1e-8);
   }
@@ -125,7 +146,7 @@ test('layer and shape validation rejects missing references, duplicate layers an
   ]) { const doc = exampleDocument(); mutation(doc); assert.throws(() => validateDocument(doc)); }
 });
 
-test('drop inverse resolves the chosen layer at rotated angles and affine plane matrices agree', () => {
+test('drop inverse resolves the chosen layer at rotated angles and projective plane matrices agree', () => {
   const doc = exampleDocument(); doc.layers.push({ id: 'third', name: 'Third' });
   for (const mode of ['flat', 'spatial']) for (const yaw of [-175, -45, 0, 75, 179]) for (const tilt of [10, 48, 78]) {
     const camera = { mode, yaw, tilt, gap: 640 };
@@ -133,9 +154,9 @@ test('drop inverse resolves the chosen layer at rotated angles and affine plane 
       const z = layerZ(doc, layer.id, camera), p = project(221, -87, z, camera);
       const local = unprojectPoint(p.x, p.y, z, camera);
       assert.ok(Math.abs(local.x - 221) < 1e-8); assert.ok(Math.abs(local.y + 87) < 1e-8);
-      const m = planeMatrix(z, camera).slice(7, -1).split(' ').map(Number);
-      assert.ok(Math.abs(m[0] * 221 - m[2] * 87 + m[4] - p.x) < 1e-8);
-      assert.ok(Math.abs(m[1] * 221 - m[3] * 87 + m[5] - p.y) < 1e-8);
+      const m = planeMatrix(z, camera).slice(9, -1).split(',').map(Number);
+      assert.ok(Math.abs((m[0] * 221 - m[4] * 87 + m[12]) / (m[3] * 221 - m[7] * 87 + m[15]) - p.x) < 1e-8);
+      assert.ok(Math.abs((m[1] * 221 - m[5] * 87 + m[13]) / (m[3] * 221 - m[7] * 87 + m[15]) - p.y) < 1e-8);
     }
   }
 });
@@ -187,15 +208,15 @@ test('full-orbit projection and inverse agree from front and back, with finite e
       const camera = { mode: 'spatial', yaw, tilt };
       const p = project(221, -87, 320, camera), local = unprojectPoint(p.x, p.y, 320, camera);
       assert.ok(Math.abs(local.x - 221) < 1e-8); assert.ok(Math.abs(local.y + 87) < 1e-8);
-      const m = planeMatrix(320, camera).slice(7, -1).split(' ').map(Number);
-      assert.ok(Math.abs(m[0] * 221 - m[2] * 87 + m[4] - p.x) < 1e-8);
-      assert.ok(Math.abs(m[1] * 221 - m[3] * 87 + m[5] - p.y) < 1e-8);
+      const m = planeMatrix(320, camera).slice(9, -1).split(',').map(Number);
+      assert.ok(Math.abs((m[0] * 221 - m[4] * 87 + m[12]) / (m[3] * 221 - m[7] * 87 + m[15]) - p.x) < 1e-8);
+      assert.ok(Math.abs((m[1] * 221 - m[5] * 87 + m[13]) / (m[3] * 221 - m[7] * 87 + m[15]) - p.y) < 1e-8);
     }
   }
   for (const tilt of [90, 270, -90, 450]) {
     const camera = { mode: 'spatial', yaw: -30, tilt };
     assert.equal(canEditPlane(camera), false);
-    const local = unprojectPoint(100, 30, 320, camera);
+    const local = unprojectPoint(100, 30, 0, camera);
     assert.ok(Number.isFinite(local.x) && Number.isFinite(local.y));
     assert.ok(Math.hypot(local.x, local.y) < 1000);
   }

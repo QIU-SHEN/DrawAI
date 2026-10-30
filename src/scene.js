@@ -3,27 +3,60 @@ export const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ '&': 
 const esc = escapeHtml;
 const radians = n => n * Math.PI / 180;
 export const wrapAngle = angle => ((angle % 360) + 360) % 360;
-export const canEditPlane = camera => camera.mode === 'flat' || Math.abs(Math.cos(radians(camera.tilt))) > 1e-6;
+export const canEditPlane = (camera, z = 0) => camera.mode === 'flat' || Math.abs(Math.cos(radians(camera.tilt)) - z / eyeDistance(camera)) > 1e-6;
+const eyeDistance = camera => camera.distance || 2600;
 export function project(x, y, z, camera) {
   if (camera.mode === 'flat') return { x, y };
   const yaw = radians(camera.yaw), tilt = radians(camera.tilt);
-  return { x: x * Math.cos(yaw) - y * Math.sin(yaw), y: (x * Math.sin(yaw) + y * Math.cos(yaw)) * Math.cos(tilt) - z * Math.sin(tilt) };
+  const u = x * Math.cos(yaw) - y * Math.sin(yaw), v = x * Math.sin(yaw) + y * Math.cos(yaw);
+  const w = 1 - (v * Math.sin(tilt) + z * Math.cos(tilt)) / eyeDistance(camera);
+  return { x: u / w, y: (v * Math.cos(tilt) - z * Math.sin(tilt)) / w };
 }
-export function unprojectDelta(dx, dy, camera) {
-  if (camera.mode === 'flat') return { x: dx, y: dy };
-  // Exactly edge-on, the hidden in-plane axis cannot be recovered. Use its
-  // minimum-norm displacement instead of dividing by zero or exploding coordinates.
-  const yaw = radians(camera.yaw), yy = canEditPlane(camera) ? dy / Math.cos(radians(camera.tilt)) : 0;
-  return { x: dx * Math.cos(yaw) + yy * Math.sin(yaw), y: -dx * Math.sin(yaw) + yy * Math.cos(yaw) };
+export function unprojectDelta(dx, dy, camera, start = { x: 0, y: 0 }, z = 0) {
+  const a = unprojectPoint(start.x, start.y, z, camera), b = unprojectPoint(start.x + dx, start.y + dy, z, camera);
+  return { x: b.x - a.x, y: b.y - a.y };
 }
 export function unprojectPoint(x, y, z, camera) {
-  return unprojectDelta(x, y + (camera.mode === 'flat' ? 0 : z * Math.sin(radians(camera.tilt))), camera);
+  if (camera.mode === 'flat') return { x, y };
+  const yaw = radians(camera.yaw), tilt = radians(camera.tilt), c = Math.cos(tilt), s = Math.sin(tilt), d = eyeDistance(camera);
+  // A plane through the eye, or a ray parallel to it, has no unique inverse.
+  const denominator = c + y * s / d;
+  const v = Math.abs(c - z / d) < 1e-6 || Math.abs(denominator) < 1e-6 ? 0 : (y * (1 - z * c / d) + z * s) / denominator;
+  const u = x * (1 - (v * s + z * c) / d);
+  return { x: u * Math.cos(yaw) + v * Math.sin(yaw), y: -u * Math.sin(yaw) + v * Math.cos(yaw) };
 }
 export const layerZ = (doc, id, camera) => ((doc.layers.length - 1) / 2 - doc.layers.findIndex(layer => layer.id === id)) * camera.gap;
 export function planeMatrix(z, camera) {
-  if (camera.mode === 'flat') return 'matrix(1 0 0 1 0 0)';
+  if (camera.mode === 'flat') return 'matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)';
   const yaw = radians(camera.yaw), tilt = radians(camera.tilt);
-  return 'matrix(' + [Math.cos(yaw), Math.sin(yaw) * Math.cos(tilt), -Math.sin(yaw), Math.cos(yaw) * Math.cos(tilt), 0, -z * Math.sin(tilt)].join(' ') + ')';
+  const a = Math.cos(yaw), b = Math.sin(yaw), c = Math.cos(tilt), s = Math.sin(tilt), d = eyeDistance(camera);
+  return 'matrix3d(' + [a,b*c,0,-b*s/d, -b,a*c,0,-a*s/d, 0,0,1,0, 0,-z*s,0,1-z*c/d].join(',') + ')';
+}
+// SVG <g> transforms are affine. A tiny HTML viewport applies the full projective
+// transform to an inner SVG, including its text, controls and inline editors.
+export function planeMarkup(content, z, camera, attributes = '') {
+  if (camera.mode === 'flat') return '<g ' + attributes + '>' + content + '</g>';
+  const matrix = planeMatrix(z, camera);
+  return '<foreignObject ' + attributes + ' width="1" height="1" style="overflow:visible"><div xmlns="http://www.w3.org/1999/xhtml" style="width:1px;height:1px;transform-origin:0 0;transform:' + matrix + '"><svg xmlns="http://www.w3.org/2000/svg" data-projection="' + matrix.slice(9, -1) + '" style="width:1px;height:1px;overflow:visible">' + content + '</svg></div></foreignObject>';
+}
+export function elementScreenPoint(element, point) {
+  const plane = element.closest('svg[data-projection]') || element.querySelector('svg[data-projection]');
+  if (!plane) return new DOMPoint(point.x, point.y).matrixTransform(element.getScreenCTM());
+  // getScreenCTM flattens CSS perspective to an affine matrix. Keep only the
+  // local SVG transform, then explicitly divide by homogeneous w.
+  const local = plane.contains(element) ? element : plane;
+  const p = new DOMPoint(point.x, point.y).matrixTransform(local.getCTM()), m = plane.dataset.projection.split(',').map(Number);
+  const w = m[3] * p.x + m[7] * p.y + m[15];
+  return new DOMPoint((m[0] * p.x + m[4] * p.y + m[12]) / w, (m[1] * p.x + m[5] * p.y + m[13]) / w).matrixTransform(plane.closest('foreignObject').ownerSVGElement.getScreenCTM());
+}
+export function perspectiveDistance(doc, camera) {
+  // Keep the eye outside the whole document at every rotation, including large
+  // imported diagrams. Distance stays fixed during a drag until the next refit.
+  const radius = Math.max(...doc.layers.map(layer => {
+    const b = layerBounds(doc, layer.id), z = layerZ(doc, layer.id, camera);
+    return Math.hypot(Math.max(Math.abs(b.left), Math.abs(b.right)), Math.max(Math.abs(b.top), Math.abs(b.bottom)), z);
+  }));
+  return Math.max(2600, radius * 2.5);
 }
 function wrap(text, limit = 17, maxLines = 2) {
   const lines = ['']; let width = 0;
@@ -273,9 +306,9 @@ export function renderScene(svg, doc, camera, selection, showRelations, connectS
     const nodeHtml = nodes.map(n => nodeMarkup(n, selectedIds.has(n.id), !selectedNode || relatedNodes.has(n.id), relatedAgents.has(n.id), connectSource === n.id)).join('');
     const table = doc.tables.filter(t => t.layerId === layer.id).map(t => tableMarkup(t, selectedIds.has(t.id))).join('');
     const empty = '';
-    const matrix = planeMatrix(layerZ(doc, layer.id, camera), camera);
+    const z = layerZ(doc, layer.id, camera);
     // Paint each complete layer bottom-to-top; its translucent surface dims lower contents and blocks lower hit targets.
-    return '<g data-layer-stack="' + esc(layer.id) + '">' + bridges.get(layer.id).join('') + '<g class="scene-layer" data-scene-layer="' + esc(layer.id) + '" transform="' + matrix + '">' + plane(doc, layer, doc.layers.indexOf(layer), layer.id === activeLayerId) + '</g>' + sameLayerLinks.get(layer.id).join('') + '<g class="layer-content" data-layer-content="' + esc(layer.id) + '" transform="' + matrix + '">' + edges + nodeHtml + table + empty + '</g></g>';
+    return '<g data-layer-stack="' + esc(layer.id) + '">' + bridges.get(layer.id).join('') + planeMarkup(plane(doc, layer, doc.layers.indexOf(layer), layer.id === activeLayerId), z, camera, 'class="scene-layer" data-scene-layer="' + esc(layer.id) + '"') + sameLayerLinks.get(layer.id).join('') + planeMarkup(edges + nodeHtml + table + empty, z, camera, 'class="layer-content" data-layer-content="' + esc(layer.id) + '"') + '</g>';
   }).join('');
   svg.innerHTML = defs + contents;
   const points = visibleLayers.flatMap(layer => {

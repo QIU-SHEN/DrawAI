@@ -33,7 +33,7 @@ async function measure(page, pid, result) {
   }));
 }
 const env = { ...process.env, TEMP: directory, TMP: directory }; delete env.ELECTRON_RUN_AS_NODE;
-const app = await electron.launch({ executablePath:path.resolve('releases/DrawAI-0.3.0/DrawAI-win32-x64/DrawAI.exe'),args:['--user-data-dir='+path.join(directory,'electron-profile'),file],env });
+const app = await electron.launch({ executablePath:path.resolve('releases/DrawAI-0.5.0/DrawAI-win32-x64/DrawAI.exe'),args:['--user-data-dir='+path.join(directory,'electron-profile'),file],env });
 try {
   const result = report.engines.electron = { name:'Electron',versions:await app.evaluate(()=>process.versions) };
   await measure(await app.firstWindow(),app.process().pid,result);

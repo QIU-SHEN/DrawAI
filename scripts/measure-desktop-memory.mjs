@@ -9,7 +9,7 @@ const filename = path.join(directory, 'benchmark.drawai');
 await writeFile(filename, JSON.stringify({ format: 'drawai', version: 1, workspaceName: 'Benchmark', document: exampleDocument(), view: { mode: 'spatial' } }));
 const document = JSON.parse(await readFile(filename, 'utf8')).document;
 const env = { ...process.env, TEMP: directory, TMP: directory }; delete env.ELECTRON_RUN_AS_NODE;
-const app = await electron.launch({ executablePath: path.resolve('releases/DrawAI-0.3.0/DrawAI-win32-x64/DrawAI.exe'), args: ['--user-data-dir=' + path.join(directory, 'profile'), filename], env });
+const app = await electron.launch({ executablePath: path.resolve('releases/DrawAI-0.5.0/DrawAI-win32-x64/DrawAI.exe'), args: ['--user-data-dir=' + path.join(directory, 'profile'), filename], env });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const result = { recordedAt: new Date().toISOString(), note: 'Single visible packaged window, automation attached. Process working sets may count shared pages more than once. GPU video memory excluded.', fixture: { layers: document.layers.length, nodes: document.nodes.length, tables: document.tables.length, edges: document.edges.length }, samples: [] };
 try {

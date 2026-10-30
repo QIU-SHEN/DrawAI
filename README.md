@@ -8,7 +8,7 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 ## 预览
 
-三维视图：同时查看多个图层和跨层关联。
+三维视图：使用近大远小的透视，同时查看多个图层和跨层关联。
 
 ![三维流程与跨层表格关联](docs/images/spatial.png)
 
@@ -34,8 +34,8 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 | 版本 | 下载 | 适合情况 |
 | --- | --- | --- |
-| **WebView2 0.4.0（推荐）** | [Windows x64 ZIP，约 378 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.4.0/DrawAI-WebView2-0.4.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
-| Electron 0.3.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.4.0/DrawAI-0.3.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
+| **WebView2 0.5.0（推荐）** | [Windows x64 ZIP，约 380 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.5.0/DrawAI-WebView2-0.5.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
+| Electron 0.5.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.5.0/DrawAI-0.5.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
 
 1. 下载 ZIP，**完整解压**到有写入权限的文件夹。
 2. 运行 `DrawAI-WebView2.exe` 或 `DrawAI.exe`。不要只复制 EXE，也不要直接在压缩包里运行。

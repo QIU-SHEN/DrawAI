@@ -73,7 +73,7 @@ test('workspace creation can cancel and works in memory when storage is unavaila
 for (const mode of ['flat', 'spatial']) test(`layers move up/down without changing contents or active layer in ${mode}`, async ({ page }, info) => {
   await page.goto('/'); await page.locator('#view-' + mode).click();
   await page.locator('[data-select-layer="flow"]').click();
-  const beforeTransform = await page.locator('[data-layer-content="flow"]').getAttribute('transform');
+  const beforeTransform = await page.locator('[data-layer-content="flow"]').evaluate(el => el.querySelector('svg[data-projection]')?.dataset.projection || null);
   const before = exampleDocument();
   await expect(page.locator('[data-move-layer="flow"][data-offset="-1"]')).toBeDisabled();
   await expect(page.locator('[data-move-layer="data"][data-offset="1"]')).toBeDisabled();
@@ -82,7 +82,7 @@ for (const mode of ['flat', 'spatial']) test(`layers move up/down without changi
   expect(moved.layers.map(l => l.id)).toEqual(['data', 'flow']);
   expect(moved.nodes).toEqual(before.nodes); expect(moved.tables).toEqual(before.tables); expect(moved.edges).toEqual(before.edges);
   await expect(page.locator('[data-select-layer="flow"]')).toHaveClass(/active/);
-  if (mode === 'spatial') expect(await page.locator('[data-layer-content="flow"]').getAttribute('transform')).not.toBe(beforeTransform);
+  if (mode === 'spatial') expect(await page.locator('[data-layer-content="flow"]').evaluate(el => el.querySelector('svg[data-projection]')?.dataset.projection || null)).not.toBe(beforeTransform);
   else { await expect(page.locator('.scene-layer')).toHaveCount(1); await expect(page.locator('[data-node="agent2"]')).toBeVisible(); }
   await page.locator('#undo').click(); expect((await stored(page)).layers.map(l => l.id)).toEqual(['flow', 'data']);
   await page.locator('#redo').click(); expect((await stored(page)).layers.map(l => l.id)).toEqual(['data', 'flow']);

@@ -4,8 +4,8 @@ const TABLE_ID = 'table-shared';
 const key = 'drawai.document.v1';
 const stored = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
 async function point(page, selector, x = 0, y = 0) {
-  return page.locator(selector).evaluate((el, coords) => {
-    const p = new DOMPoint(coords.x, coords.y).matrixTransform(el.getScreenCTM()); return { x: p.x, y: p.y };
+  return page.locator(selector).evaluate(async (el, coords) => { const { elementScreenPoint } = await import("/src/scene.js");
+    const p = elementScreenPoint(el, { x: coords.x, y: coords.y }); return { x: p.x, y: p.y };
   }, { x, y });
 }
 async function dragTo(page, a, b) {

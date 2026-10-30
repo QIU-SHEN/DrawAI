@@ -4,7 +4,7 @@
 
 Windows 免安装运行，图表保存在本机，无需登录。默认只有一个空白图层，不附带任何图表，也不包含 AI 模型或远程 Agent 服务。
 
-[下载最新版本](https://github.com/QIU-SHEN/DrawAI/releases/latest) · [反馈问题](https://github.com/QIU-SHEN/DrawAI/issues) · [桌面实现](docs/desktop.md) · [WebView2 实现](docs/webview2.md)
+[在线试用](https://drawai-spatial-20261028.jiaweishang37.chatgpt.site) · [下载最新版本](https://github.com/QIU-SHEN/DrawAI/releases/latest) · [反馈问题](https://github.com/QIU-SHEN/DrawAI/issues) · [桌面实现](docs/desktop.md) · [WebView2 实现](docs/webview2.md)
 
 ## 预览
 
@@ -21,6 +21,14 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 ![空白画布与天空蓝主题](docs/images/theme-blue.png)
 
 > 前两张截图使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发。
+
+## 在线试用
+
+**[点击打开 DrawAI，无需下载安装](https://drawai-spatial-20261028.jiaweishang37.chatgpt.site)**
+
+首次访问只有一个空白图层，可直接拖入图形和表格、切换平面/三维并导出 .drawai 文件。
+
+网页版图表自动保存在当前浏览器，不会上传到服务器或与别人共享。再次访问会恢复自己的内容；需要重新开始时点击左下角「清空画布」（可撤销）。换设备前请导出备份。原生主题菜单、文件关联和系统保存对话框由桌面版提供。
 
 ## 下载与运行
 

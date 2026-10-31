@@ -19,8 +19,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
-[assembly: System.Reflection.AssemblyVersion("0.7.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.7.1.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.2.0")]
 
 namespace DrawAI.WebViewEdition {
 static class Program {
@@ -133,6 +133,7 @@ sealed class EditorWindow : Form {
     readonly ToolStripMenuItem themeMenu = new ToolStripMenuItem("主题");
     readonly Dictionary<string, byte[]> assets = new Dictionary<string, byte[]>();
     readonly Dictionary<string, CancellationTokenSource> aiJobs = new Dictionary<string, CancellationTokenSource>();
+    readonly Dictionary<string, AiLog> aiLogs = new Dictionary<string, AiLog>();
     readonly string storageKey = "drawai.webview2." + Guid.NewGuid().ToString("N");
     Dictionary<string, object> loaded;
     bool initialized, allowClose, closePending;
@@ -231,6 +232,14 @@ sealed class EditorWindow : Form {
                 foreach (var item in values) await Changed(item, true); initialized = true; result = Status();
             } else if (type == "changed" && initialized) { await Changed(value); result = Status(); }
             else if (type == "ai-request" && initialized) result = await RequestAI(Program.Obj(value));
+            else if (type == "ai-logs" && initialized) result = AiLog.Browse(Program.Obj(value));
+            else if (type == "ai-log-result" && initialized) {
+                var update = Program.Obj(value); AiLog log; string requestId = Program.Str(update, "id");
+                if (requestId == null || !aiLogs.TryGetValue(requestId, out log)) throw new Exception("未找到对应的 AI 请求日志。");
+                string outcome = Program.Str(update, "outcome"), error = Program.Str(update, "error") ?? "";
+                if (!new[] { "success", "error", "canceled", "timeout", "pending-review" }.Contains(outcome) || error.Length > 16000) throw new Exception("日志结果格式无效。");
+                log.Outcome(outcome, error, "client-result"); log.ForgetSecrets(); aiLogs.Remove(requestId); result = new { file = log.Name, logError = log.WriteError };
+            }
             else if (type == "ai-cancel" && initialized) {
                 CancellationTokenSource job; string requestId = Program.Str(Program.Obj(value), "id");
                 if (requestId != null && aiJobs.TryGetValue(requestId, out job)) job.Cancel(); result = new { };
@@ -255,6 +264,9 @@ sealed class EditorWindow : Form {
         var parsed = Program.Parse(body); var messages = Program.Get(parsed, "messages") as object[];
         if (String.IsNullOrWhiteSpace(Program.Str(parsed, "model")) || messages == null || messages.Length > 30 || !Object.Equals(Program.Get(parsed, "stream"), false)) throw new Exception("AI 请求格式无效。");
         if (aiJobs.Count != 0) throw new Exception("已有 AI 请求正在进行。");
+        // Bound transient response records across repeated calls, including abandoned UI requests.
+        foreach (var old in aiLogs.Keys.ToArray()) { aiLogs[old].ForgetSecrets(); aiLogs.Remove(old); }
+        var log = new AiLog(id, uri, key, parsed); aiLogs[id] = log;
         var cancellation = new CancellationTokenSource(); aiJobs[id] = cancellation; cancellation.CancelAfter(120000);
         try {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
@@ -269,14 +281,19 @@ sealed class EditorWindow : Form {
                 using (var output = new MemoryStream()) {
                     var buffer = new byte[16384]; int count;
                     while ((count = await input.ReadAsync(buffer, 0, buffer.Length, cancellation.Token)) > 0) {
-                        if (output.Length + count > 2 * 1024 * 1024) return new { error = "AI 返回内容过大，画布未修改。" };
+                        if (output.Length + count > 2 * 1024 * 1024) {
+                            log.Response((int)response.StatusCode, Convert.ToString(response.Content.Headers.ContentType), output.ToArray(), true);
+                            log.Outcome("error", "AI 返回内容过大，画布未修改。", "transport");
+                            return new { error = "AI 返回内容过大，画布未修改。", logFile = log.Name, logError = log.WriteError };
+                        }
                         output.Write(buffer, 0, count);
                     }
-                    return new { text = Encoding.UTF8.GetString(output.ToArray()), status = (int)response.StatusCode };
+                    log.Response((int)response.StatusCode, Convert.ToString(response.Content.Headers.ContentType), output.ToArray(), false);
+                    return new { text = Encoding.UTF8.GetString(output.ToArray()), status = (int)response.StatusCode, logFile = log.Name, logError = log.WriteError };
                 }
             }
-        } catch (OperationCanceledException) { return new { error = "AI 请求已停止或超时。" }; }
-        catch { return new { error = "无法连接 API，请检查地址和网络。" }; }
+        } catch (OperationCanceledException error) { log.Outcome("canceled-or-timeout", error.GetType().Name, "transport"); return new { error = "AI 请求已停止或超时。", logFile = log.Name, logError = log.WriteError }; }
+        catch (Exception error) { log.Outcome("error", error.GetType().Name + ": " + error.Message, "transport"); return new { error = "无法连接 API，请检查地址和网络。", logFile = log.Name, logError = log.WriteError }; }
         finally { aiJobs.Remove(id); cancellation.Dispose(); }
     }
     string PickSave(string current, string name, bool copy = false) {

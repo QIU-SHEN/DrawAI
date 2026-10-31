@@ -12,7 +12,11 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 Key 仅在本次打开期间保留，不写入图表文件。发送时，当前图表、最近对话和附图会直接传给所填服务商。AI 仅在 WebView2 桌面版提供，通过本机请求。[配置与限制说明](docs/ai.md)。
 
+AI 报错会自动记录 HTTP 状态、模型原始回复及解析原因。点击对话栏底部「查看日志」可查看、复制或打开日志文件夹；日志仅留本机，自动保留最近 20 次请求。
+
 ![AI 对话绘图面板](docs/images/ai.png)
+
+![AI 错误与原始返回日志](docs/images/ai-logs.png)
 
 ## 预览
 
@@ -32,7 +36,7 @@ Key 仅在本次打开期间保留，不写入图表文件。发送时，当前�
 
 ![空白画布与天空蓝主题](docs/images/theme-blue.png)
 
-> 截图已更新至 0.7.1。AI 截图来自 WebView2，使用本机模拟接口演示交互，并非真实模型质量评测。下方前三张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
+> 截图已更新至 0.7.2。AI 截图来自 WebView2，使用本机模拟接口演示交互，并非真实模型质量评测。下方前三张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
 
 ## 在线试用
 
@@ -48,7 +52,7 @@ Key 仅在本次打开期间保留，不写入图表文件。发送时，当前�
 
 | 版本 | 下载 | 适合情况 |
 | --- | --- | --- |
-| **WebView2 0.7.1** | [Windows x64 ZIP，约 402 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.7.1/DrawAI-WebView2-0.7.1-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
+| **WebView2 0.7.2** | [Windows x64 ZIP，约 410 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.7.2/DrawAI-WebView2-0.7.2-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
 
 1. 下载 ZIP，**完整解压**到有写入权限的文件夹。
 2. 运行 `DrawAI-WebView2.exe`。不要只复制 EXE，也不要直接在压缩包里运行。

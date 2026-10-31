@@ -7,6 +7,41 @@ export function mountAIPanel(host) {
   const state = () => { const id = host.context().id; if (!sessions.has(id)) sessions.set(id, { messages: [], images: [], draft: '', pending: null }); return sessions.get(id); };
   const settings = () => ({ address: $('ai-address').value, model: $('ai-model').value, key });
   const note = message => { $('ai-status').textContent = message; };
+  let lastLogFile = null;
+  const logDialog = $('ai-log-dialog');
+  $('ai-view-logs').hidden = !host.logs;
+  async function logCall(action, name) {
+    const reply = await host.logs.browse(action, name);
+    if (reply.error) throw new Error(reply.error);
+    return reply;
+  }
+  async function readLog() {
+    const name = $('ai-log-files').value;
+    $('ai-log-copy').disabled = !name;
+    if (!name) { $('ai-log-content').value = '暂无日志。发送一次 AI 请求后会自动记录。'; return; }
+    try {
+      const reply = await logCall('read', name);
+      try {
+        const entry = JSON.parse(reply.text), raw = entry.responseBody; delete entry.responseBody;
+        let content = '';
+        try { const body = JSON.parse(raw); content = body.choices?.[0]?.message?.content; if (typeof content !== 'string') content = JSON.stringify(content || ''); } catch {}
+        $('ai-log-content').value = (content ? '—— 模型内容 message.content ——\n' + content + '\n\n' : '') + '—— 请求与解析结果 ——\n' + JSON.stringify(entry, null, 2) + (raw !== undefined ? '\n\n—— 原始 HTTP 回复（已脱敏） ——\n' + raw : '');
+      } catch { $('ai-log-content').value = reply.text; }
+    } catch (error) { $('ai-log-content').value = error.message; }
+  }
+  $('ai-view-logs').onclick = async () => {
+    logDialog.showModal(); $('ai-log-content').value = '正在读取日志…';
+    try {
+      const reply = await logCall('list'); $('ai-log-path').textContent = reply.directory;
+      $('ai-log-files').replaceChildren(...reply.files.map(name => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; }));
+      if (reply.files.includes(lastLogFile)) $('ai-log-files').value = lastLogFile;
+      await readLog();
+    } catch (error) { $('ai-log-content').value = error.message; }
+  };
+  $('ai-log-files').onchange = readLog;
+  $('ai-log-close').onclick = () => logDialog.close();
+  $('ai-log-copy').onclick = async () => { try { await logCall('copy', $('ai-log-files').value); $('ai-log-status').textContent = '日志已复制。'; } catch (error) { $('ai-log-status').textContent = error.message; } };
+  $('ai-log-folder').onclick = async () => { try { await logCall('open'); } catch (error) { $('ai-log-status').textContent = error.message; } };
   function remember() {
     key = $('ai-key').value.trim(); aiSettings(settings());
     try { localStorage.setItem('drawai.ai.settings.v1', JSON.stringify({ address: $('ai-address').value.trim(), model: $('ai-model').value.trim() })); } catch {}
@@ -86,9 +121,11 @@ export function mountAIPanel(host) {
       if (s.messages.length > 40) s.messages.splice(0, s.messages.length - 40);
     }
     refresh();
+    let outcome = 'success', diagnostic = '', logError = '';
     const timer = setTimeout(() => { job.timedOut = true; job.controller.abort(); host.transport?.cancel(job.id); }, 120000);
     try {
       const reply = host.transport ? await host.transport.request({ ...request, id: job.id }) : await fetchAI(request, job.controller.signal);
+      lastLogFile = reply.logFile || null; logError = reply.logError || '';
       if (job.canceled || job.timedOut) return;
       if (reply.error) throw new Error(reply.error);
       if (testing) {
@@ -101,21 +138,32 @@ export function mountAIPanel(host) {
       let status = '';
       if (result.document) {
         if (host.apply(result.document, base)) { status = '已应用到画布 · 可撤销'; s.pending = null; }
-        else { s.pending = result.document; status = '画布已变化，未覆盖。可在新工作空间查看结果。'; }
+        else { s.pending = result.document; outcome = 'pending-review'; status = '画布已变化，未覆盖。可在新工作空间查看结果。'; }
       }
       s.messages.push({ role: 'assistant', text: result.message || '已生成图表。', status });
       note(status || 'AI 已回复。');
       if (host.context().id !== base.id) host.notify('AI 已完成，请回到原工作空间查看结果。');
     } catch (error) {
       if (job.canceled || job.timedOut) return;
+      outcome = 'error';
+      diagnostic = [error.name + ': ' + error.message, error.cause ? error.cause.name + ': ' + error.cause.message : '', error.stack || ''].filter(Boolean).join('\n');
       const message = error instanceof TypeError ? (host.transport ? '无法连接 API，请检查地址和网络。' : '无法连接 API，请检查地址、网络和跨域设置；不支持浏览器跨域的接口可使用桌面版。') : error.message;
       const safe = [key, request.key].filter(Boolean).reduce((text, secret) => text.split(secret).join('[已隐藏]'), String(message));
-      if (!testing) s.messages.push({ role: 'assistant', text: safe });
-      note(safe);
+      const displayed = safe + (host.logs ? '\n请求编号：' + job.id + '。点击「查看日志」查看原始回复。' : '');
+      if (!testing) s.messages.push({ role: 'assistant', text: displayed });
+      note(displayed);
     } finally {
-      clearTimeout(timer); busy = null; refresh();
+      clearTimeout(timer);
+      if (host.logs) {
+        try {
+          const saved = await host.logs.result({ id: job.id, outcome: job.timedOut ? 'timeout' : job.canceled ? 'canceled' : outcome, error: diagnostic.slice(0, 16000) });
+          lastLogFile = saved.file || lastLogFile; logError = saved.error || saved.logError || '';
+        } catch { logError = '日志写入失败。'; }
+      }
+      busy = null; refresh();
       if (job.timedOut) note('请求超过 120 秒，已停止，画布未修改。可缩小绘图范围后重试。');
       else if (job.canceled) note('已停止请求，画布未修改。');
+      if (logError) note($('ai-status').textContent + '\n' + logError);
     }
   }
   return { refresh };

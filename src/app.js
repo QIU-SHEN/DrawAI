@@ -1247,6 +1247,7 @@ if (desktop?.engine === 'webview2') {
     },
     undo: () => $('undo').click(), resize: () => { finishInlineEdit(true); requestAnimationFrame(viewBox); }, notify: toast,
     transport: desktop?.aiRequest ? { request: request => desktop.aiRequest(request), cancel: id => desktop.aiCancel(id) } : null,
+    logs: desktop?.aiLogs ? { browse: (action, name) => desktop.aiLogs(action, name), result: value => desktop.aiLogResult(value) } : null,
   });
 } else {
   $('ai-panel').remove();

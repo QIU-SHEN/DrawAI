@@ -149,3 +149,56 @@ test('WebView2 native AI supports images, undo, errors and cancellation without 
   const api = await mockAPI(), host = await launchWebView();
   try { await nativeAIExercise(host.page, api); } finally { await host.stop(); await api.close(); }
 });
+
+test('AI logs persist raw responses and parse failures, redact secrets/images, survive restart and stay bounded', { timeout: 90000 }, async () => {
+  const { mockAPI, configureAI, promptAI, imageFile } = await import('../fixtures/ai.mjs');
+  const { readdir } = await import('node:fs/promises');
+  const api = await mockAPI(); let host = await launchWebView(); const directory = host.directory;
+  const logFolder = path.join(directory, 'profile', 'logs', 'ai');
+  const logs = async () => (await readdir(logFolder)).filter(n=>n.endsWith('.json')).sort().reverse();
+  const readLatest = async () => JSON.parse(await readFile(path.join(logFolder,(await logs())[0]),'utf8'));
+  try {
+    const page = host.page;
+    api.setHandler((call,res) => { const image=call.body.messages.at(-1).content[1].image_url.url; res.end(JSON.stringify({choices:[{message:{content:'这是普通文字，不是 JSON。 test-only-secret query-secret-123 ' + image}}]})); });
+    await configureAI(page,api.url+'?api_key=query-secret-123');
+    await page.locator('#ai-image-file').setInputFiles(imageFile);
+    await expect(page.locator('#ai-images img')).toHaveCount(1);
+    await promptAI(page,'生成这个');
+    await expect(page.locator('#ai-status')).toContainText('请求编号');
+    await expect(page.locator('#ai-send')).toBeEnabled();
+    let entry = await readLatest();
+    assert.equal(entry.httpStatus,200); assert.equal(entry.outcome,'error'); assert.equal(entry.imageCount,1);
+    assert.match(entry.error,/SyntaxError/); assert.match(entry.responseBody,/这是普通文字/);
+    const raw=JSON.stringify(entry); assert.ok(!raw.includes('test-only-secret')); assert.ok(!raw.includes('query-secret-123')); assert.ok(!raw.includes(imageFile.buffer.toString('base64')));
+    assert.equal(entry.endpoint,api.url+'/chat/completions'); assert.equal(entry.messageCount,3);
+    await page.locator('#ai-view-logs').click(); await expect(page.locator('#ai-log-content')).toHaveValue(/模型内容 message.content/);
+    await expect(page.locator('#ai-log-content')).toHaveValue(/这是普通文字/);
+    await page.locator('#ai-log-close').click();
+    api.setHandler((_call,res)=>{res.writeHead(401);res.end('{"error":{"message":"bad credentials"}}');});
+    await promptAI(page,'再次生成'); await expect(page.locator('#ai-status')).toContainText('401');await expect(page.locator('#ai-send')).toBeEnabled();
+    entry=await readLatest();assert.equal(entry.httpStatus,401);assert.match(entry.responseBody,/bad credentials/);
+    api.setHandler(()=>{});await promptAI(page,'取消这个请求');await expect.poll(()=>api.calls.length).toBe(3);await page.locator('#ai-stop').click();await expect(page.locator('#ai-send')).toBeEnabled();assert.equal((await readLatest()).outcome,'canceled');
+    api.setHandler((_call,res)=>res.end('x'.repeat(2*1024*1024+100)));
+    await promptAI(page,'过大回复');await expect(page.locator('#ai-status')).toContainText('过大');await expect(page.locator('#ai-send')).toBeEnabled();assert.equal((await readLatest()).responseTruncated,true);
+    // Direct bridge calls exercise log retention without GUI timing noise.
+    api.setHandler((_call,res)=>res.end('not-json'));
+    for(let i=0;i<21;i++) await page.evaluate(async ({endpoint,id})=>{await window.drawaiDesktop.aiRequest({id,endpoint,key:'',body:JSON.stringify({model:'m',messages:[],stream:false})});await window.drawaiDesktop.aiLogResult({id,outcome:'error',error:'parse failure'});},{endpoint:api.url+'/chat/completions',id:'retention-'+i});
+    assert.equal((await logs()).length,20);
+    const rejected=await page.evaluate(()=>window.drawaiDesktop.aiLogs('read','../../theme.txt'));assert.match(rejected.error,/无效/);
+    await host.stop();host=await launchWebView(undefined,directory);
+    await host.page.locator('#ai-toggle').click();await host.page.locator('#ai-view-logs').click();
+    await expect(host.page.locator('#ai-log-files option')).toHaveCount(20);await expect(host.page.locator('#ai-log-content')).toHaveValue(/not-json/);
+  } finally {await host.stop();await api.close();}
+});
+
+test('unwritable AI logs report failure without blocking drawing', { timeout: 30000 }, async () => {
+  const { mockAPI, configureAI, promptAI } = await import('../fixtures/ai.mjs');
+  const api=await mockAPI(), host=await launchWebView();
+  try {
+    const dir=path.join(host.directory,'profile','logs');await mkdir(dir,{recursive:true});await writeFile(path.join(dir,'ai'),'not a directory');
+    await configureAI(host.page,api.url);await promptAI(host.page,'画审批流程');
+    await expect(host.page.locator('[data-node="submit"]')).toBeVisible();
+    await expect(host.page.locator('#ai-status')).toContainText('日志写入失败');
+    await expect(host.page.locator('#ai-send')).toBeEnabled();
+  } finally {await host.stop();await api.close();}
+});

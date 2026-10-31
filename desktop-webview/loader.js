@@ -24,6 +24,7 @@ try {
     exportFile: id => invoke('export', { id }),
     open: () => invoke('open'), close: () => invoke('close'),
     aiRequest: request => invoke('ai-request', request), aiCancel: id => invoke('ai-cancel', { id }),
+    aiLogResult: result => invoke('ai-log-result', result), aiLogs: (action, name) => invoke('ai-logs', { action, name }),
     onCommand: callback => callbacks.add(callback),
   }) });
   if (boot.testing) Object.defineProperty(window, '__drawaiTest', { value: (action, data) => invoke('test', { action, data }) });

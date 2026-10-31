@@ -43,13 +43,13 @@ export function aiRequest(settings, context, history, text, images = []) {
 export function aiResult(raw) {
   if (typeof raw !== 'string' || raw.length > AI_RESPONSE_LIMIT) throw new Error('AI 返回内容过大或无效，画布未修改。');
   let value;
-  try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch { throw new Error('AI 未返回有效的图表 JSON，画布未修改。请让模型重新生成或换一个模型。'); }
+  try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (cause) { throw new Error('AI 未返回有效的图表 JSON，画布未修改。请让模型重新生成或换一个模型。', { cause }); }
   if (!value || typeof value.message !== 'string' || value.message.length > 12000 || !Object.hasOwn(value, 'document')) throw new Error('AI 回复格式不符合要求，画布未修改。');
   if (value.document === null) return { message: value.message, document: null };
   try {
     if (value.document.version !== 3) throw new Error('version');
     return { message: value.message, document: validateDocument(value.document) };
-  } catch { throw new Error('AI 图表存在无效图形、尺寸或连线引用，画布未修改。请让模型检查后重试。'); }
+  } catch (cause) { throw new Error('AI 图表存在无效图形、尺寸或连线引用，画布未修改。请让模型检查后重试。', { cause }); }
 }
 export function aiResponse(text, status) {
   if (status < 200 || status >= 300) {
@@ -57,7 +57,7 @@ export function aiResponse(text, status) {
     throw new Error('API 请求失败（' + status + '）：' + hint + '。');
   }
   let value;
-  try { value = JSON.parse(text); } catch { throw new Error('接口未返回 JSON，请检查 API 地址是否为兼容接口。'); }
+  try { value = JSON.parse(text); } catch (cause) { throw new Error('接口未返回 JSON，请检查 API 地址是否为兼容接口。', { cause }); }
   const choice = value.choices?.[0];
   if (choice?.finish_reason === 'length') throw new Error('模型输出被截断，画布未修改。请缩小本次绘图范围后重试。');
   if (choice?.message?.refusal) throw new Error('模型未执行本次请求，请调整描述后重试。');

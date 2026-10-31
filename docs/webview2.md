@@ -46,3 +46,7 @@ scripts/compare-desktop-memory.mjs 顺序启动两版的单可见窗口、隔离
 ## AI 请求通道（0.7.0）
 
 `aiRequest` / `aiCancel` 使用带 ID 的消息桥；宿主只接受已初始化主页面请求，经 HttpClient 发到用户设置的 HTTP(S) Chat Completions 地址。每窗口最多一个请求，不跟随重定向、不保存 Cookie，120 秒超时，限制请求与回复大小；关闭窗口会取消请求。Key 仅经内存传递，不落盘。图片使用 data URL 随请求发送，详见 [AI 接入](ai.md)。
+
+## AI 诊断日志（0.7.2）
+
+AiLog.cs 在原生请求阶段记录脱敏响应，前端通过 aiLogResult 回填解析/校验结果。aiLogs 仅接受 list/read/copy/open 四种操作，读取限制为固定日志目录与程序生成的文件名。日志采用临时文件替换写入，最多保留 20 份；写入失败单独提示，不改变绘图结果。主 frame 来源检查与现有消息桥一致。

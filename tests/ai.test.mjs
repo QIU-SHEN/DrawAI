@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aiEndpoint, aiSettings, aiRequest, aiResult, aiResponse, fetchAI } from '../src/ai.js';
+import { aiEndpoint, aiSettings, aiRequest, aiResult, aiResponse, fetchAI, aiRepairRequest, AIValidationError } from '../src/ai.js';
 import { blankDocument, validateDocument } from '../src/model.js';
 import { generated, completion, mockAPI } from './fixtures/ai.mjs';
 
@@ -66,4 +66,23 @@ test('AI validation identifies exact fields without accepting invalid geometry o
     [d=>d.edges[0].target='missing',/edges\[0\]\.target/],
     [d=>d.nodes[0].layerId='missing',/nodes\[0\]\.layerId/],
   ]) {const doc=generated();edit(doc);assert.throws(()=>aiResult(JSON.stringify({message:'完成',document:doc})),pattern);}
+});
+
+
+test('repair requests preserve image/context and return exact validation error to model', () => {
+  const doc=generated();doc.tables.push({id:'t1',layerId:'flow',title:'资料',x:0,y:0,width:200,height:120,columns:['项目'],cells:[['内容']]});
+  const request=aiRequest({address:'https://example.com',model:'vision',key:'secret'},{name:'空间',document:blankDocument()},[],'照图修改',[{url:'data:image/png;base64,abc'}]);
+  const response=JSON.stringify(completion(doc));let error;
+  try{aiResponse(response,200);}catch(e){error=e;}
+  assert.ok(error instanceof AIValidationError);assert.match(error.message,/tables\[0\]\.width/);
+  const next=aiRepairRequest(request,response,error), before=JSON.parse(request.body),after=JSON.parse(next.body);
+  assert.deepEqual(after.messages.slice(0,before.messages.length),before.messages);
+  assert.equal(after.messages.at(-2).role,'assistant');assert.equal(JSON.parse(after.messages.at(-2).content).document.tables[0].width,200);
+  assert.match(after.messages.at(-1).content,/tables\[0\]\.width/);assert.match(after.messages.at(-1).content,/240/);
+  let syntax; const malformed=JSON.stringify({choices:[{message:{content:'{bad'}}]});try{aiResponse(malformed,200);}catch(e){syntax=e;}
+  assert.ok(JSON.parse(aiRepairRequest(request,malformed,syntax).body).messages.at(-1).content.includes(syntax.cause.message));
+  assert.equal(next.endpoint,request.endpoint);assert.equal(next.key,request.key);assert.equal(before.messages.length,3);
+  for(const [raw,status] of [['{}',401],['not-json',200],[JSON.stringify({choices:[{message:{refusal:'no'}}]}),200]]) {
+    assert.throws(()=>aiResponse(raw,status),e=>!(e instanceof AIValidationError));
+  }
 });

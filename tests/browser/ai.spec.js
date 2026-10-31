@@ -58,3 +58,40 @@ test('stale AI response preserves manual edits and can open separately; cancel a
   await page.unrouteAll(); await page.route(address + '/chat/completions',route=>route.fulfill({json:{choices:[{message:{content:'bad'}}]}}));
   await promptAI(page,'非法回复'); await expect(page.locator('#ai-status')).toContainText('未返回有效'); await expect(page.locator('.diagram-node')).toHaveCount(1);
 });
+
+test('AI sends precise errors and original images back twice, then applies one undoable result', async ({page})=>{
+  const calls=[];const doc=generated();doc.tables.push({id:'t1',layerId:'flow',title:'资料',x:0,y:220,width:200,height:120,columns:['项目'],cells:[['内容']]});
+  await page.route(address+'/chat/completions',async route=>{
+    calls.push(route.request().postDataJSON());
+    const reply=structuredClone(doc);
+    if(calls.length>1)reply.tables[0].width=240;
+    if(calls.length===2)reply.edges[0].target='missing';
+    await route.fulfill({json:completion(reply)});
+  });
+  await configureAI(page,address);await page.locator('#ai-image-file').setInputFiles(imageFile);
+  await expect(page.locator('#ai-images img')).toHaveCount(1);await promptAI(page,'照图生成');
+  await expect(page.locator('#ai-send')).toBeEnabled();await expect(page.locator('.shared-table')).toHaveCount(1);
+  expect(calls).toHaveLength(3);expect(calls[1].messages.at(-1).content).toContain('tables[0].width');expect(calls[2].messages.at(-1).content).toContain('edges[0].target');
+  expect(calls[2].messages.slice(0,3)).toEqual(calls[0].messages);expect(calls[2].messages.at(-2).role).toBe('assistant');
+  await expect(page.locator('#ai-messages')).toContainText('模型已自动修正 2 次');
+  await page.locator('#ai-undo').click();await expect(page.locator('.diagram-node,.shared-table')).toHaveCount(0);
+});
+
+test('AI stops at three invalid replies and does not retry HTTP failures',async({page})=>{
+  let calls=0;await page.route(address+'/chat/completions',route=>{calls++;return route.fulfill({json:{choices:[{message:{content:'not-json'}}]}});});
+  await configureAI(page,address);await promptAI(page,'做图');await expect(page.locator('#ai-send')).toBeEnabled();
+  await expect(page.locator('#ai-status')).toContainText('自动修正已重试 2 次');expect(calls).toBe(3);await expect(page.locator('.diagram-node')).toHaveCount(0);
+  await page.unroute(address+'/chat/completions');await page.route(address+'/chat/completions',route=>{calls++;return route.fulfill({status:401,json:{}});});
+  await promptAI(page,'重发');await expect(page.locator('#ai-send')).toBeEnabled();expect(calls).toBe(4);await expect(page.locator('#ai-status')).toContainText('401');
+});
+
+test('retry can be canceled and preserves edits made while waiting',async({page})=>{
+  let calls=0,release;
+  await page.route(address+'/chat/completions',async route=>{calls++;if(calls%2===1)return route.fulfill({json:{choices:[{message:{content:'bad'}}]}});await new Promise(r=>release=r);await route.fulfill({json:completion()}).catch(()=>{});});
+  await configureAI(page,address);await promptAI(page,'画流程');await expect.poll(()=>!!release).toBeTruthy();
+  await expect(page.locator('#ai-status')).toContainText('第 1/2 次重试');await page.locator('#ai-stop').click();release();
+  await expect(page.locator('#ai-send')).toBeEnabled();await expect(page.locator('#ai-status')).toContainText('已停止');expect(calls).toBe(2);await expect(page.locator('.diagram-node')).toHaveCount(0);
+  release=null;await promptAI(page,'再试');await expect.poll(()=>!!release).toBeTruthy();
+  await page.locator('[data-template="ellipse"]').dblclick();await page.locator('#inline-node-title').fill('保留手工内容');await page.locator('#inline-node-title').press('Enter');
+  release();await expect(page.locator('#ai-new-workspace')).toBeVisible();await expect(page.locator('.diagram-node')).toHaveCount(1);await expect(page.locator('.node-title')).toContainText('保留手工内容');
+});

@@ -19,8 +19,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
-[assembly: System.Reflection.AssemblyVersion("0.7.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.7.3.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.4.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.4.0")]
 
 namespace DrawAI.WebViewEdition {
 static class Program {
@@ -237,7 +237,7 @@ sealed class EditorWindow : Form {
                 var update = Program.Obj(value); AiLog log; string requestId = Program.Str(update, "id");
                 if (requestId == null || !aiLogs.TryGetValue(requestId, out log)) throw new Exception("未找到对应的 AI 请求日志。");
                 string outcome = Program.Str(update, "outcome"), error = Program.Str(update, "error") ?? "";
-                if (!new[] { "success", "error", "canceled", "timeout", "pending-review" }.Contains(outcome) || error.Length > 16000) throw new Exception("日志结果格式无效。");
+                if (!new[] { "success", "error", "canceled", "timeout", "pending-review", "retry" }.Contains(outcome) || error.Length > 16000) throw new Exception("日志结果格式无效。");
                 log.Outcome(outcome, error, "client-result"); log.ForgetSecrets(); aiLogs.Remove(requestId); result = new { file = log.Name, logError = log.WriteError };
             }
             else if (type == "ai-cancel" && initialized) {

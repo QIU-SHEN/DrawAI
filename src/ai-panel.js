@@ -1,4 +1,4 @@
-import { aiSettings, aiRequest, aiResponse, fetchAI } from './ai.js';
+import { aiSettings, aiRequest, aiResponse, fetchAI, aiRepairRequest, AIValidationError } from './ai.js';
 
 export function mountAIPanel(host) {
   const $ = id => document.getElementById(id), panel = $('ai-panel'), sessions = new Map();
@@ -70,7 +70,7 @@ export function mountAIPanel(host) {
     $('ai-new-workspace').hidden = !s.pending;
     $('ai-clear').disabled = !!busy;
     $('ai-toggle').textContent = busy ? 'AI 生成中…' : '✧ AI 做图';
-    if (busy) note(busy.testing ? '正在测试连接…' : busy.workspace === host.context().id ? 'AI 正在理解并绘图，可以随时停止…' : '另一个工作空间正在生成，可以停止或稍后返回查看。');
+    if (busy) note(busy.retryStatus || (busy.testing ? '正在测试连接…' : busy.workspace === host.context().id ? 'AI 正在理解并绘图，可以随时停止…' : '另一个工作空间正在生成，可以停止或稍后返回查看。'));
     messages.scrollTop = messages.scrollHeight;
   }
   $('ai-toggle').onclick = () => { panel.hidden = !panel.hidden; $('ai-toggle').setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) { refresh(); $('ai-prompt').focus(); } host.resize(); };
@@ -121,32 +121,69 @@ export function mountAIPanel(host) {
       if (s.messages.length > 40) s.messages.splice(0, s.messages.length - 40);
     }
     refresh();
-    let outcome = 'success', diagnostic = '', logError = '';
-    const timer = setTimeout(() => { job.timedOut = true; job.controller.abort(); host.transport?.cancel(job.id); }, 120000);
+    let outcome = 'success', diagnostic = '', logError = '', attempt = 0;
+    const operationId = job.id;
+    let loggedId = null;
+    const describeError = error => {
+      const parts = [];
+      for (let current = error, depth = 0; current && depth < 5; current = current.cause, depth++) parts.push(current.stack || current.name + ': ' + current.message);
+      return parts.join('\nCaused by: ');
+    };
+    async function saveAttempt() {
+      if (!host.logs || loggedId === job.id) return;
+      loggedId = job.id;
+      try {
+        const saved = await host.logs.result({ id: job.id, outcome: job.timedOut ? 'timeout' : job.canceled ? 'canceled' : outcome, error: ('任务编号：' + operationId + '；尝试 ' + (attempt + 1) + '/3\n' + diagnostic).slice(0, 16000) });
+        lastLogFile = saved.file || lastLogFile; logError = saved.error || saved.logError || logError;
+      } catch { logError = '日志写入失败。'; }
+    }
+    let timer;
+    const startTimer = () => timer = setTimeout(() => { job.timedOut = true; job.controller.abort(); host.transport?.cancel(job.id); }, 120000);
     try {
-      const reply = host.transport ? await host.transport.request({ ...request, id: job.id }) : await fetchAI(request, job.controller.signal);
-      lastLogFile = reply.logFile || null; logError = reply.logError || '';
-      if (job.canceled || job.timedOut) return;
-      if (reply.error) throw new Error(reply.error);
-      if (testing) {
-        if (reply.status < 200 || reply.status >= 300) aiResponse(reply.text, reply.status);
-        let body; try { body = JSON.parse(reply.text); } catch { throw new Error('接口未返回 JSON，请检查地址。'); }
-        if (!body.choices?.[0]?.message) throw new Error('接口回复不符合 Chat Completions 格式。');
-        note('连接成功，模型可用。识图能力需通过附图请求确认。'); return;
+      let result;
+      for (attempt = 0; attempt <= 2; attempt++) {
+        if (job.canceled || job.timedOut) return;
+        startTimer();
+        const reply = host.transport ? await host.transport.request({ ...request, id: job.id }) : await fetchAI(request, job.controller.signal);
+        clearTimeout(timer);
+        lastLogFile = reply.logFile || null; logError = reply.logError || logError;
+        if (job.canceled || job.timedOut) return;
+        if (reply.error) throw new Error(reply.error);
+        if (testing) {
+          if (reply.status < 200 || reply.status >= 300) aiResponse(reply.text, reply.status);
+          let body; try { body = JSON.parse(reply.text); } catch { throw new Error('接口未返回 JSON，请检查地址。'); }
+          if (!body.choices?.[0]?.message) throw new Error('接口回复不符合 Chat Completions 格式。');
+          note('连接成功，模型可用。识图能力需通过附图请求确认。'); return;
+        }
+        try {
+          result = aiResponse(reply.text, reply.status);
+          if (attempt && !result.document) throw new AIValidationError('修正回复缺少完整图表 document，画布未修改。');
+          break;
+        } catch (error) {
+          if (!(error instanceof AIValidationError)) throw error;
+          if (attempt === 2) throw new Error('自动修正已重试 2 次，仍未通过校验：' + error.message, { cause: error });
+          const nextRequest = aiRepairRequest(request, reply.text, error);
+          outcome = 'retry'; diagnostic = describeError(error);
+          await saveAttempt();
+          if (job.canceled || job.timedOut) return;
+          job.id = crypto.randomUUID(); request = nextRequest; outcome = 'success'; diagnostic = '';
+          job.retryStatus = '校验失败：' + error.message + '\n正在让模型修正（第 ' + (attempt + 1) + '/2 次重试）…';
+          refresh();
+        }
       }
-      const result = aiResponse(reply.text, reply.status);
       let status = '';
       if (result.document) {
         if (host.apply(result.document, base)) { status = '已应用到画布 · 可撤销'; s.pending = null; }
         else { s.pending = result.document; outcome = 'pending-review'; status = '画布已变化，未覆盖。可在新工作空间查看结果。'; }
       }
+      if (attempt) status = '模型已自动修正 ' + attempt + ' 次 · ' + status;
       s.messages.push({ role: 'assistant', text: result.message || '已生成图表。', status });
       note(status || 'AI 已回复。');
       if (host.context().id !== base.id) host.notify('AI 已完成，请回到原工作空间查看结果。');
     } catch (error) {
       if (job.canceled || job.timedOut) return;
       outcome = 'error';
-      diagnostic = [error.name + ': ' + error.message, error.cause ? error.cause.name + ': ' + error.cause.message : '', error.stack || ''].filter(Boolean).join('\n');
+      diagnostic = describeError(error);
       const message = error instanceof TypeError ? (host.transport ? '无法连接 API，请检查地址和网络。' : '无法连接 API，请检查地址、网络和跨域设置；不支持浏览器跨域的接口可使用桌面版。') : error.message;
       const safe = [key, request.key].filter(Boolean).reduce((text, secret) => text.split(secret).join('[已隐藏]'), String(message));
       const displayed = safe + (host.logs ? '\n请求编号：' + job.id + '。点击「查看日志」查看原始回复。' : '');
@@ -154,12 +191,7 @@ export function mountAIPanel(host) {
       note(displayed);
     } finally {
       clearTimeout(timer);
-      if (host.logs) {
-        try {
-          const saved = await host.logs.result({ id: job.id, outcome: job.timedOut ? 'timeout' : job.canceled ? 'canceled' : outcome, error: diagnostic.slice(0, 16000) });
-          lastLogFile = saved.file || lastLogFile; logError = saved.error || saved.logError || '';
-        } catch { logError = '日志写入失败。'; }
-      }
+      await saveAttempt();
       busy = null; refresh();
       if (job.timedOut) note('请求超过 120 秒，已停止，画布未修改。可缩小绘图范围后重试。');
       else if (job.canceled) note('已停止请求，画布未修改。');

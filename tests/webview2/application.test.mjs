@@ -159,7 +159,7 @@ test('AI logs persist raw responses and parse failures, redact secrets/images, s
   const readLatest = async () => JSON.parse(await readFile(path.join(logFolder,(await logs())[0]),'utf8'));
   try {
     const page = host.page;
-    api.setHandler((call,res) => { const image=call.body.messages.at(-1).content[1].image_url.url; res.end(JSON.stringify({choices:[{message:{content:'这是普通文字，不是 JSON。 test-only-secret query-secret-123 ' + image}}]})); });
+    api.setHandler((call,res) => { const image=call.body.messages.find(m=>Array.isArray(m.content)).content[1].image_url.url; res.end(JSON.stringify({choices:[{message:{content:'这是普通文字，不是 JSON。 test-only-secret query-secret-123 ' + image}}]})); });
     await configureAI(page,api.url+'?api_key=query-secret-123');
     await page.locator('#ai-image-file').setInputFiles(imageFile);
     await expect(page.locator('#ai-images img')).toHaveCount(1);
@@ -170,14 +170,14 @@ test('AI logs persist raw responses and parse failures, redact secrets/images, s
     assert.equal(entry.httpStatus,200); assert.equal(entry.outcome,'error'); assert.equal(entry.imageCount,1);
     assert.match(entry.error,/SyntaxError/); assert.match(entry.responseBody,/这是普通文字/);
     const raw=JSON.stringify(entry); assert.ok(!raw.includes('test-only-secret')); assert.ok(!raw.includes('query-secret-123')); assert.ok(!raw.includes(imageFile.buffer.toString('base64')));
-    assert.equal(entry.endpoint,api.url+'/chat/completions'); assert.equal(entry.messageCount,3);
+    assert.equal(entry.endpoint,api.url+'/chat/completions'); assert.equal(entry.messageCount,7);
     await page.locator('#ai-view-logs').click(); await expect(page.locator('#ai-log-content')).toHaveValue(/模型内容 message.content/);
     await expect(page.locator('#ai-log-content')).toHaveValue(/这是普通文字/);
     await page.locator('#ai-log-close').click();
     api.setHandler((_call,res)=>{res.writeHead(401);res.end('{"error":{"message":"bad credentials"}}');});
     await promptAI(page,'再次生成'); await expect(page.locator('#ai-status')).toContainText('401');await expect(page.locator('#ai-send')).toBeEnabled();
     entry=await readLatest();assert.equal(entry.httpStatus,401);assert.match(entry.responseBody,/bad credentials/);
-    api.setHandler(()=>{});await promptAI(page,'取消这个请求');await expect.poll(()=>api.calls.length).toBe(3);await page.locator('#ai-stop').click();await expect(page.locator('#ai-send')).toBeEnabled();assert.equal((await readLatest()).outcome,'canceled');
+    api.setHandler(()=>{});await promptAI(page,'取消这个请求');await expect.poll(()=>api.calls.length).toBe(5);await page.locator('#ai-stop').click();await expect(page.locator('#ai-send')).toBeEnabled();assert.equal((await readLatest()).outcome,'canceled');
     api.setHandler((_call,res)=>res.end('x'.repeat(2*1024*1024+100)));
     await promptAI(page,'过大回复');await expect(page.locator('#ai-status')).toContainText('过大');await expect(page.locator('#ai-send')).toBeEnabled();assert.equal((await readLatest()).responseTruncated,true);
     // Direct bridge calls exercise log retention without GUI timing noise.
@@ -214,5 +214,22 @@ test('identical AI table duplicates apply once and undo together; conflicts iden
     await expect(host.page.locator('.diagram-node')).toHaveCount(2);await expect(host.page.locator('.shared-table')).toHaveCount(1);await expect(host.page.locator('#ai-messages')).toContainText('合并 1 处');
     await host.page.locator('#ai-undo').click();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
     doc.nodes[2].cells=[['不同内容']];await promptAI(host.page,'冲突表格');await expect(host.page.locator('#ai-status')).toContainText('nodes[2] 与 tables[0]');await expect(host.page.locator('#ai-send')).toBeEnabled();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
+  }finally{await host.stop();await api.close();}
+});
+
+test('native AI repairs table width through model and logs each attempt separately', {timeout:30000},async()=>{
+  const {mockAPI,configureAI,promptAI,completion,generated,imageFile}=await import('../fixtures/ai.mjs');
+  const {readdir}=await import('node:fs/promises');const api=await mockAPI(),host=await launchWebView();
+  try{
+    const doc=generated();doc.tables.push({id:'t1',layerId:'flow',title:'资料',x:0,y:220,width:200,height:120,columns:['项目'],cells:[['内容']]});
+    api.setHandler((_call,res)=>{const reply=structuredClone(doc);if(api.calls.length===2)reply.tables[0].width=320;res.end(JSON.stringify(completion(reply)));});
+    await configureAI(host.page,api.url);await host.page.locator('#ai-image-file').setInputFiles(imageFile);await expect(host.page.locator('#ai-images img')).toHaveCount(1);
+    await promptAI(host.page,'按图片生成');await expect(host.page.locator('#ai-send')).toBeEnabled();await expect(host.page.locator('.shared-table')).toHaveCount(1);
+    assert.equal(api.calls.length,2);assert.match(api.calls[1].body.messages.at(-1).content,/tables\[0\]\.width/);assert.deepEqual(api.calls[1].body.messages.slice(0,3),api.calls[0].body.messages);
+    const folder=path.join(host.directory,'profile','logs','ai');const names=(await readdir(folder)).filter(n=>n.endsWith('.json')).sort();assert.equal(names.length,2);
+    const entries=await Promise.all(names.map(n=>readFile(path.join(folder,n),'utf8').then(JSON.parse)));assert.equal(entries[0].outcome,'retry');assert.match(entries[0].error,/尝试 1\/3/);assert.match(entries[0].error,/tables\[0\]\.width/);assert.equal(entries[1].outcome,'success');assert.match(entries[1].error,/尝试 2\/3/);
+    assert.equal(entries[0].error.split('；')[0],entries[1].error.split('；')[0]);assert.notEqual(entries[0].requestId,entries[1].requestId);
+    const file=path.join(host.directory,'模型修正.drawai');await native(host.page,'save-path',file);await host.page.locator('#desktop-save').click();await expect(host.page.locator('#save-status')).toHaveText('已保存到文件');assert.equal(JSON.parse(await readFile(file,'utf8')).document.tables[0].width,320);
+    await host.page.locator('#ai-undo').click();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
   }finally{await host.stop();await api.close();}
 });

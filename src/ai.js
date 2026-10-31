@@ -41,18 +41,30 @@ export function aiRequest(settings, context, history, text, images = []) {
   if (new TextEncoder().encode(body).length > AI_REQUEST_LIMIT) throw new Error('本次图表与图片内容过大，请减少图片或图表内容。');
   return { ...config, body };
 }
+export class AIValidationError extends Error {}
+export function aiRepairRequest(request, response, error) {
+  const body = JSON.parse(request.body), reply = JSON.parse(response);
+  let content = reply.choices?.[0]?.message?.content;
+  if (Array.isArray(content)) content = content.filter(p => p.type === 'text').map(p => p.text).join('');
+  body.messages.push({ role: 'assistant', content: typeof content === 'string' ? content : '[上一条回复没有文本内容]' },
+    { role: 'user', content: '上一次生成未通过 DrawAI 校验，画布尚未修改。具体错误：' + error.message + (error.cause?.message ? '\n解析/校验详情：' + error.cause.message : '') +
+      '\n请根据原始需求、图片和图表修复该错误，同时检查全部字段及连线引用。保持其他内容不变，返回完整的 {"message":"说明","document":完整图表} JSON，不要只返回补丁，不要以 document:null 代替修复。' });
+  const serialized = JSON.stringify(body);
+  if (new TextEncoder().encode(serialized).length > AI_REQUEST_LIMIT) throw new Error('自动修正请求过大，已停止，画布未修改。');
+  return { ...request, body: serialized };
+}
 export function aiResult(raw) {
-  if (typeof raw !== 'string' || raw.length > AI_RESPONSE_LIMIT) throw new Error('AI 返回内容过大或无效，画布未修改。');
+  if (typeof raw !== 'string' || raw.length > AI_RESPONSE_LIMIT) throw new AIValidationError('AI 返回内容过大或无效，画布未修改。');
   let value;
-  try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (cause) { throw new Error('AI 未返回有效的图表 JSON，画布未修改。请让模型重新生成或换一个模型。', { cause }); }
-  if (!value || typeof value.message !== 'string' || value.message.length > 12000 || !Object.hasOwn(value, 'document')) throw new Error('AI 回复格式不符合要求，画布未修改。');
+  try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (cause) { throw new AIValidationError('AI 未返回有效的图表 JSON，画布未修改。请让模型重新生成或换一个模型。', { cause }); }
+  if (!value || typeof value.message !== 'string' || value.message.length > 12000 || !Object.hasOwn(value, 'document')) throw new AIValidationError('AI 回复格式不符合要求，画布未修改。');
   if (value.document === null) return { message: value.message, document: null };
   try {
-    if (value.document?.version !== 3) throw new Error('document.version：必须为数字 3。');
+    if (value.document?.version !== 3) throw new AIValidationError('document.version：必须为数字 3。');
     const { document, merged } = normalizeAITables(value.document);
     const validated = validateDocument(document);
     return { message: value.message + (merged ? '\n已合并 ' + merged + ' 处完全相同的表格副本，保留表格内容和关联连线。' : ''), document: validated };
-  } catch (cause) { throw new Error('AI 图表存在无效数据：' + cause.message + ' 画布未修改。', { cause }); }
+  } catch (cause) { throw new AIValidationError('AI 图表存在无效数据：' + cause.message + ' 画布未修改。', { cause }); }
 }
 
 // Some models repeat an identical table in nodes. Only that unambiguous duplicate

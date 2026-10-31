@@ -9,21 +9,18 @@
     "dev": "node server.mjs",
     "prestart": "npm run build",
     "start": "node server.mjs",
-    "check": "node --check src/app.js && node --check src/model.js && node --check src/scene.js && node --check server.mjs && node --check scripts/build-portable.mjs && node --check src/ai.js && node --check src/ai-panel.js && node --check desktop/main.mjs",
+    "check": "node --check src/app.js && node --check src/model.js && node --check src/scene.js && node --check server.mjs && node --check scripts/build-portable.mjs && node --check src/ai.js && node --check src/ai-panel.js",
     "test": "node --test tests/model.test.mjs tests/ai.test.mjs",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "predesktop": "npm run build",
-    "desktop": "electron desktop/main.mjs",
-    "build:desktop": "npm run build && node scripts/build-desktop.mjs",
+    "predesktop": "npm run build:webview2",
+    "desktop": "powershell.exe -NoProfile -Command \"& ./releases/DrawAI-WebView2-0.7.1-win-x64/DrawAI-WebView2.exe\"",
+    "build:desktop": "npm run build:webview2",
     "build:webview2": "npm run build && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-webview2.ps1",
-    "pretest:desktop": "npm run build",
-    "test:desktop": "node --test tests/desktop/*.test.mjs",
+    "test:desktop": "npm run test:webview2",
     "test:webview2": "node --test tests/webview2/*.test.mjs"
   },
   "devDependencies": {
-    "@electron/packager": "20.3.0",
-    "@playwright/test": "^1.64.1",
-    "electron": "45.1.0"
+    "@playwright/test": "^1.64.1"
   }
 }

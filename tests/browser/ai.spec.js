@@ -1,7 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { configureAI, promptAI, imageFile, completion, generated } from '../fixtures/ai.mjs';
 const address = 'https://ai.example.test/v1';
-test.beforeEach(async ({ page }) => { await page.goto('/'); });
+// Component tests opt into the desktop-only UI in an isolated browser harness.
+// Production web pages never enable this branch; native HTTP is tested in WebView2.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/src/app.js', async route => { const response=await route.fetch(); const source=await response.text(); expect(source).toContain("if (desktop?.engine === 'webview2')"); await route.fulfill({response,body:source.replace("if (desktop?.engine === 'webview2')",'if (true)')}); });
+  await page.goto('/');
+});
 
 test('AI settings and send remain reachable on short desktop and phone screens', async ({ page }) => {
   await page.locator('#ai-toggle').click();

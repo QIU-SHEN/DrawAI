@@ -1224,25 +1224,30 @@ if (desktop) {
   renderWorkspaces();
 }
 
-const aiToggle = document.createElement('button');
-aiToggle.id = 'ai-toggle'; aiToggle.className = 'button quiet'; aiToggle.textContent = '✧ AI 做图'; aiToggle.setAttribute('aria-expanded', 'false');
-document.querySelector('.header-actions').insertBefore(aiToggle, $('import'));
-aiPanel = mountAIPanel({
-  context: () => ({ id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name }),
-  snapshot: () => { finishInlineEdit(true); return { id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name, document: clone(doc) }; },
-  apply: (next, base) => {
-    finishInlineEdit(true);
-    if (activeWorkspaceId !== base.id || JSON.stringify(doc) !== JSON.stringify(base.document)) return false;
-    cancelCanvasDrag(); clearPaletteDrag();
-    mutate(() => { doc = next; selection = null; inspectorNodeId = null; connectSource = null; camera.zoom = 1; camera.panX = 0; camera.panY = 0; }, { refit: true });
-    return true;
-  },
-  openWorkspace: next => {
-    if (workspaceCatalog.length >= 50) { toast('工作空间数量已达上限。'); return false; }
-    const id = uid('workspace'); workspaceCatalog.push({ id, name: 'AI 生成结果' });
-    workspaceSessions.set(id, { doc: clone(next), history: new History(), view: { mode: 'flat' } });
-    switchWorkspace(id); return true;
-  },
-  undo: () => $('undo').click(), resize: () => { finishInlineEdit(true); requestAnimationFrame(viewBox); }, notify: toast,
-  transport: desktop?.aiRequest ? { request: request => desktop.aiRequest(request), cancel: id => desktop.aiCancel(id) } : null,
-});
+// AI is a WebView2 desktop feature; web and historical Electron builds stay drawing-only.
+if (desktop?.engine === 'webview2') {
+  const aiToggle = document.createElement('button');
+  aiToggle.id = 'ai-toggle'; aiToggle.className = 'button quiet'; aiToggle.textContent = '✧ AI 做图'; aiToggle.setAttribute('aria-expanded', 'false');
+  document.querySelector('.header-actions').insertBefore(aiToggle, $('import'));
+  aiPanel = mountAIPanel({
+    context: () => ({ id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name }),
+    snapshot: () => { finishInlineEdit(true); return { id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name, document: clone(doc) }; },
+    apply: (next, base) => {
+      finishInlineEdit(true);
+      if (activeWorkspaceId !== base.id || JSON.stringify(doc) !== JSON.stringify(base.document)) return false;
+      cancelCanvasDrag(); clearPaletteDrag();
+      mutate(() => { doc = next; selection = null; inspectorNodeId = null; connectSource = null; camera.zoom = 1; camera.panX = 0; camera.panY = 0; }, { refit: true });
+      return true;
+    },
+    openWorkspace: next => {
+      if (workspaceCatalog.length >= 50) { toast('工作空间数量已达上限。'); return false; }
+      const id = uid('workspace'); workspaceCatalog.push({ id, name: 'AI 生成结果' });
+      workspaceSessions.set(id, { doc: clone(next), history: new History(), view: { mode: 'flat' } });
+      switchWorkspace(id); return true;
+    },
+    undo: () => $('undo').click(), resize: () => { finishInlineEdit(true); requestAnimationFrame(viewBox); }, notify: toast,
+    transport: desktop?.aiRequest ? { request: request => desktop.aiRequest(request), cancel: id => desktop.aiCancel(id) } : null,
+  });
+} else {
+  $('ai-panel').remove();
+}

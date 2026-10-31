@@ -1,4 +1,6 @@
-# DrawAI 桌面交付
+# 历史 Electron 桌面实现
+
+0.7.1 起只维护、构建和发布 [WebView2 桌面版](webview2.md)。本文及相关 Electron 源码仅保留作历史参考；默认 npm 依赖不再安装 Electron。
 
 Windows 10/11 x64 免安装目录，使用 Electron 45.1.0；网页编辑器复用同一份源码，通过 `drawai-app://editor` 本地协议加载白名单静态资源，不开启 HTTP 端口。文件格式为 `.drawai`，独立于原 JSON 与离线 HTML。
 

@@ -127,7 +127,8 @@ test('WebView2 keeps graph movement, resize, arrows, editable tables and 3D rota
     const before=JSON.parse(await readFile(file,'utf8')).document, p=await position('[data-node="agent2"]',0,0), view=await page.locator('#scene').getAttribute('viewBox');
     await drag(p,{x:p.x+35,y:p.y+20});assert.notEqual((await saved()).nodes.find(n=>n.id==='agent2').x,before.nodes.find(n=>n.id==='agent2').x);assert.equal(await page.locator('#scene').getAttribute('viewBox'),view);
     await page.locator('#undo').click();await page.locator('[data-list-node="agent2"]').click();
-    await drag(await position('[data-node="agent2"]',100,56),await position('[data-node="agent2"]',170,96));
+    const handleY=+(await page.locator('[data-node="agent2"] [data-resize="se"]').getAttribute('cy'));
+    await drag(await position('[data-node="agent2"]',100,handleY),await position('[data-node="agent2"]',170,handleY+40));
     assert.ok((await saved()).nodes.find(n=>n.id==='agent2').width>260);await page.locator('#undo').click();
     await page.locator('[data-list-node="standard"]').click();
     await drag(await position('[data-node="standard"]',0,-93),await position('[data-node="retake"]',-70,0));
@@ -232,4 +233,20 @@ test('native AI repairs table width through model and logs each attempt separate
     const file=path.join(host.directory,'模型修正.drawai');await native(host.page,'save-path',file);await host.page.locator('#desktop-save').click();await expect(host.page.locator('#save-status')).toHaveText('已保存到文件');assert.equal(JSON.parse(await readFile(file,'utf8')).document.tables[0].width,320);
     await host.page.locator('#ai-undo').click();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
   }finally{await host.stop();await api.close();}
+});
+
+test('native text auto-fit and edge context styles persist in DrawAI files', {timeout:30000},async()=>{
+  const {generated}=await import('../fixtures/ai.mjs');const doc=generated('按门店输出商品明细');doc.nodes[0].description='门店编号、商品编号、名称、价格、数量、配送时间以及完整的核对结果。';doc.nodes[0].x=-350;doc.nodes[1].x=350;doc.nodes[1].y=150;
+  const dir=await mkdtemp(path.resolve('.local/webview2-tests/text-'));const file=path.join(dir,'文字与连线.drawai');await writeFile(file,JSON.stringify({format:'drawai',version:1,workspaceName:'文字与连线',document:doc,view:{mode:'flat'}}));
+  let host=await launchWebView(file);
+  try{
+    const page=host.page;await expect(page.locator('[data-node="submit"] .node-description')).toHaveText(doc.nodes[0].description);assert.ok(+(await page.locator('[data-node="submit"] .node-back').getAttribute('height'))>112);
+    for(const [field,value] of [['routing','straight'],['direction','both'],['style','dashed']]){
+      const point=await page.locator('[data-edge="e1"] .edge-line').evaluate(el=>{const q=el.getPointAtLength(el.getTotalLength()/2),p=new DOMPoint(q.x,q.y).matrixTransform(el.getScreenCTM());return{x:p.x,y:p.y};});
+      await page.mouse.click(point.x,point.y,{button:'right'});await expect(page.locator('#edge-context-menu')).toBeVisible();await page.locator(`[data-edge-setting="${field}"][data-value="${value}"]`).click();
+    }
+    await expect(page.locator('[data-edge="e1"] .edge-line')).toHaveAttribute('marker-start',/data-arrow/);await page.locator('#desktop-save').click();await expect(page.locator('#save-status')).toHaveText('已保存到文件');
+    const saved=JSON.parse(await readFile(file,'utf8')).document;assert.equal(saved.nodes[0].description,doc.nodes[0].description);assert.ok(saved.nodes[0].height>112);assert.equal(saved.edges[0].routing,'straight');assert.equal(saved.edges[0].direction,'both');assert.equal(saved.edges[0].style,'dashed');
+    await host.stop();host=await launchWebView(file);await expect(host.page.locator('[data-edge="e1"] .edge-line')).toHaveAttribute('marker-start',/data-arrow/);await expect(host.page.locator('[data-edge="e1"] .edge-line')).toHaveAttribute('d',/ L/);
+  }finally{await host.stop();}
 });

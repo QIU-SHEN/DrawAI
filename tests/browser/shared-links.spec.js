@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.mjs';
+import { test, expect, fitFixture } from './fixtures.mjs';
 import { exampleDocument } from '../fixtures/example.mjs';
 const key = 'drawai.document.v1';
 const stored = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
@@ -51,6 +51,7 @@ test('shared link label edits in place, respects IME and Escape, persists and su
 test('Delete and toolbar remove an aggregate shared link and undo restores all its checklist associations', async ({ page }) => {
   const fixture = exampleDocument();
   await page.evaluate(({ key, fixture }) => localStorage.setItem(key, JSON.stringify(fixture)), { key, fixture }); await page.reload();
+  Object.assign(fixture,await fitFixture(page,fixture));
   const p = await linkPoint(page, 'agent2'); await page.mouse.click(p.x, p.y); await page.keyboard.press('Delete');
   await expect(page.locator('[data-edge="relation-agent2"]')).toHaveCount(0);
   const saved = await stored(page);

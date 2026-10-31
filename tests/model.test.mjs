@@ -299,3 +299,17 @@ test('cylinder and actor retain free anchors through resize and file round trips
     assert.ok(Math.hypot(resized.x-p.x*2,resized.y-p.y*2)<1e-8);
   }
 });
+
+test('edge direction and routing survive files and reject unsupported enum values',()=>{
+  const doc=exampleDocument();doc.edges[0].direction='both';doc.edges[0].routing='straight';
+  assert.deepEqual(validateDocument(JSON.parse(JSON.stringify(doc))).edges[0],doc.edges[0]);
+  for(const [field,value] of [['direction','sideways'],['routing','script']]){const bad=structuredClone(doc);bad.edges[0][field]=value;assert.throws(()=>validateDocument(bad),new RegExp('edges\\[0\\]\\.'+field));}
+});
+
+test('cross-layer straight and double-ended edges render with both line styles',async()=>{
+  const {renderScene}=await import('../src/scene.js');const doc=exampleDocument();doc.edges=[{id:'cross',source:'agent2',target:'table-shared',label:'关联',routing:'straight',direction:'both'}];
+  for(const style of ['solid','dashed']){
+    doc.edges[0].style=style;const svg={innerHTML:''};renderScene(svg,doc,{mode:'spatial',tilt:55,yaw:-30,gap:640},null,true,null,'flow');
+    assert.match(svg.innerHTML,/class="edge-line[^\"]*" d="M[^\"]+ L[^\"]+"/);assert.match(svg.innerHTML,/marker-start="url\(#(?:flow|data)-arrow\)"/);
+  }
+});

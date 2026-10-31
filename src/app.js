@@ -1,5 +1,5 @@
 import { STORAGE_KEY, createTable, getDiagramObject, updateDiagramObject, kinds, shapes, clone, uid, blankDocument, removeNode, removeLayer, addEdge, validateDocument, validateDiagramFile, History } from './model.js';
-import { renderScene, wrapAngle, canEditPlane, unprojectDelta, unprojectPoint, layerZ, planeMarkup, perspectiveDistance, elementScreenPoint, project, nodeSize, portPoint, freePort, escapeHtml as esc } from './scene.js';
+import { renderScene, wrapAngle, canEditPlane, unprojectDelta, unprojectPoint, layerZ, planeMarkup, perspectiveDistance, elementScreenPoint, project, nodeSize, fitNodeText, portPoint, freePort, escapeHtml as esc } from './scene.js';
 import { mountAIPanel } from './ai-panel.js';
 
 const $ = id => document.getElementById(id);
@@ -169,6 +169,7 @@ function toast(message) {
 }
 
 function persist() {
+  doc.nodes.forEach(fitNodeText);
   clearTimeout(saveTimeout);
   captureWorkspace();
   try {
@@ -222,6 +223,7 @@ function viewBox() {
 
 function scene(refit = false) {
   finishInlineEdit(true);
+  doc.nodes.forEach(fitNodeText);
   if (selection?.type === 'multi') setObjectSelection(selection.ids.filter(id => {
     const object = getDiagramObject(doc, id);
     return object && (camera.mode !== 'flat' || object.layerId === activeLayerId);
@@ -327,8 +329,9 @@ function beginInlineEdit(id) {
   if (!node || !group) return;
   const editor = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
   editor.setAttribute('class', 'node-inline-editor');
-  editor.setAttribute('x', '-100'); editor.setAttribute('y', '-56');
-  editor.setAttribute('width', '200'); editor.setAttribute('height', '112');
+  const {w,h} = nodeSize(node);
+  editor.setAttribute('x', String(-w)); editor.setAttribute('y', String(-h));
+  editor.setAttribute('width', String(w * 2)); editor.setAttribute('height', String(Math.max(112, h * 2)));
   editor.innerHTML = '<div xmlns="http://www.w3.org/1999/xhtml" class="inline-text-fields"><input id="inline-node-title" maxlength="60" aria-label="图形名称" placeholder="图形名称" autocomplete="off"/><textarea id="inline-node-description" maxlength="240" aria-label="图形说明" placeholder="输入说明…" spellcheck="false"></textarea></div>';
   inlineEdit = { type: 'node', id, editor };
   group.classList.add('editing-text');
@@ -452,6 +455,47 @@ function finishInlineEdit(save) {
 document.addEventListener('pointerdown', event => {
   if (inlineEdit && !inlineEdit.editor.contains(event.target)) finishInlineEdit(true);
 }, true);
+const edgeMenu = document.createElement('div');
+edgeMenu.id = 'edge-context-menu'; edgeMenu.className = 'edge-context-menu'; edgeMenu.hidden = true;
+edgeMenu.setAttribute('role', 'menu'); edgeMenu.setAttribute('aria-label', '连线样式'); document.body.append(edgeMenu);
+const closeEdgeMenu = () => { edgeMenu.hidden = true; };
+function openEdgeMenu(id, x, y) {
+  finishInlineEdit(true);
+  const edge = doc.edges.find(e => e.id === id); if (!edge) return;
+  selection = {type:'edge',id}; inspectorNodeId = null; connectSource = null; render({table:false});
+  const groups = [['线型','style','solid',[['solid','实线'],['dashed','虚线']]],['箭头','direction','forward',[['forward','单向箭头'],['both','双向箭头']]],['路径','routing','curved',[['straight','直线'],['curved','弯曲线']]]];
+  edgeMenu.innerHTML = groups.map(([title,key,fallback,values]) => '<div class="edge-menu-heading">' + title + '</div>' + values.map(([value,label]) => '<button type="button" role="menuitemradio" aria-checked="' + ((edge[key] || fallback) === value) + '" data-edge-setting="' + key + '" data-value="' + value + '"><span>' + ((edge[key] || fallback) === value ? '✓' : '') + '</span>' + label + '</button>').join('')).join('');
+  edgeMenu.onclick = event => {
+    const button = event.target.closest('[data-edge-setting]'); if (!button) return;
+    const key = button.dataset.edgeSetting, value = button.dataset.value;
+    closeEdgeMenu();
+    if ((edge[key] || groups.find(g => g[1] === key)[2]) === value) return;
+    if (key === 'style' && doc.edges.some(other => other.id !== edge.id && other.source === edge.source && other.target === edge.target && (other.style || 'solid') === value)) { toast('已存在相同起终点和线型的连线'); return; }
+    if (key === 'style' && value === 'dashed') { showRelations = true; $('show-relations').checked = true; }
+    mutate(() => { edge[key] = value; });
+  };
+  edgeMenu.hidden = false;
+  const bounds = edgeMenu.getBoundingClientRect();
+  edgeMenu.style.left = Math.max(8, Math.min(x, innerWidth - bounds.width - 8)) + 'px';
+  edgeMenu.style.top = Math.max(8, Math.min(y, innerHeight - bounds.height - 8)) + 'px';
+  edgeMenu.querySelector('button').focus({preventScroll:true});
+}
+svg.addEventListener('contextmenu', event => {
+  const edge = event.target.closest('[data-edge]');
+  if (!edge) { closeEdgeMenu(); return; }
+  event.preventDefault(); openEdgeMenu(edge.dataset.edge, event.clientX, event.clientY);
+});
+document.addEventListener('pointerdown', event => { if (!edgeMenu.contains(event.target)) closeEdgeMenu(); }, true);
+edgeMenu.addEventListener('keydown', event => {
+  event.stopPropagation();
+  if (event.key === 'Escape' || event.key === 'Tab') { closeEdgeMenu(); return; }
+  const buttons = [...edgeMenu.querySelectorAll('button')], index = buttons.indexOf(document.activeElement);
+  if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
+    event.preventDefault(); buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length].focus();
+  }
+});
+window.addEventListener('resize', closeEdgeMenu); window.addEventListener('blur', closeEdgeMenu);
+
 $('edit-relation-text').onclick = () => { if (selection?.type === 'edge') beginEdgeEdit(selection.id); };
 $('delete-relation').onclick = () => {
   if (selection?.type === 'edge') mutate(() => { doc.edges = doc.edges.filter(e => e.id !== selection.id); });
@@ -902,6 +946,7 @@ svg.addEventListener('pointermove', event => {
       const sy = drag.handle.includes('s') ? 1 : drag.handle.includes('n') ? -1 : 0;
       n.width = sx ? Math.max(minWidth, drag.width - 2 * (10000 + sx * drag.x), Math.min(maxSize, drag.width + 2 * (10000 - sx * drag.x), Math.round(drag.width + delta.x * sx))) : drag.width;
       n.height = sy ? Math.max(minHeight, drag.height - 2 * (10000 + sy * drag.y), Math.min(maxSize, drag.height + 2 * (10000 - sy * drag.y), Math.round(drag.height + delta.y * sy))) : drag.height;
+      fitNodeText(n);
       n.x = drag.x + sx * (n.width - drag.width) / 2;
       n.y = drag.y + sy * (n.height - drag.height) / 2;
     } else {

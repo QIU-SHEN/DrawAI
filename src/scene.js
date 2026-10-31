@@ -76,7 +76,53 @@ function wrap(text, limit = 17, maxLines = 2) {
   return lines;
 }
 const pt = p => p.x.toFixed(2) + ',' + p.y.toFixed(2);
-export const nodeSize = n => ({ w: (n.width ?? (n.shape === 'actor' ? 100 : n.shape === 'cylinder' ? 180 : n.shape === 'diamond' ? 260 : n.shape === 'ellipse' ? 210 : 200)) / 2, h: (n.height ?? (['actor', 'cylinder', 'diamond'].includes(n.shape) ? 180 : n.shape === 'ellipse' ? 140 : 112)) / 2 });
+const rawNodeSize = n => ({ w: (n.width ?? (n.shape === 'actor' ? 100 : n.shape === 'cylinder' ? 180 : n.shape === 'diamond' ? 260 : n.shape === 'ellipse' ? 210 : 200)) / 2, h: (n.height ?? (['actor', 'cylinder', 'diamond'].includes(n.shape) ? 180 : n.shape === 'ellipse' ? 140 : 112)) / 2 });
+const textLayoutCache = new WeakMap();
+let textContext;
+function fullTextLines(text, width, bold) {
+  if (!textContext && typeof document !== 'undefined') textContext = document.createElement('canvas').getContext('2d');
+  if (textContext) textContext.font = (bold ? '650' : '400') + ' 23px "Segoe UI", "Microsoft YaHei", sans-serif';
+  const lines = ['']; let used = 0;
+  const chars = [...String(text || '').replace(/\r/g, '')];
+  const measure = char => textContext ? textContext.measureText(char).width : (/[\u0000-\u00ff]/.test(char) ? 15 : 23);
+  for (let index = 0; index < chars.length; index++) {
+    const char = chars[index];
+    if (char === '\n') { lines.push(''); used = 0; continue; }
+    const size = measure(char);
+    const next = chars[index + 1], trailing = next && /[，。！？；：、）》】”’,.!?;:]/.test(next) ? measure(next) : 0;
+    if (used + size + trailing > width && lines.at(-1)) { lines.push(''); used = 0; }
+    lines[lines.length - 1] += char; used += size;
+  }
+  return lines;
+}
+// Reserve an inscribed text rectangle, so labels also fit slanted/curved shapes.
+export function nodeTextLayout(n) {
+  const base = rawNodeSize(n);
+  const key = JSON.stringify([n.shape,n.title,n.description,base.w,base.h]);
+  const cached = textLayoutCache.get(n); if (cached?.key === key) return cached.layout;
+  const [fx, fy, offset = 0] = ({diamond:[.5,.5],ellipse:[.7,.7],triangle:[.42,.42,.17],parallelogram:[.72,.9],trapezoid:[.58,.85],pentagon:[.6,.6,.07],hexagon:[.55,.85],octagon:[.7,.8],chevron:[.4,.8],cylinder:[.85,.5]}[n.shape] || [.94,.92]);
+  let width = base.w * 2, height = base.h * 2, title, description, textHeight;
+  const calculate = () => {
+    const available = Math.max(24, width * fx - 24);
+    title = fullTextLines(n.title, available, true);
+    description = n.description ? fullTextLines(n.description, available, false) : [];
+    textHeight = (title.length + description.length) * 30 + (description.length ? 8 : 0);
+  };
+  calculate();
+  while (n.shape !== 'actor' && (textHeight + 24) / fy > 2400 && width < 2400) { width = Math.min(2400, Math.ceil(width * 1.25)); calculate(); }
+  if (n.shape !== 'actor') height = Math.max(height, Math.min(2400, Math.ceil((textHeight + 24) / fy)));
+  // Only pathological newline-heavy text can exceed the document's size limit.
+  const scale = n.shape === 'actor' ? 1 : Math.min(1, Math.max(1, height * fy - 24) / textHeight);
+  const layout = { width, height, title, description, textHeight, scale, offset: offset * height };
+  textLayoutCache.set(n, {key,layout}); return layout;
+}
+export const nodeSize = rawNodeSize;
+export function fitNodeText(n) {
+  if (n.kind === 'table') return;
+  const size = rawNodeSize(n), layout = nodeTextLayout(n);
+  if (layout.width > size.w * 2) n.width = layout.width;
+  if (layout.height > size.h * 2) n.height = layout.height;
+}
 export const portVector = port => ({ n: { x: 0, y: -1 }, e: { x: 1, y: 0 }, s: { x: 0, y: 1 }, w: { x: -1, y: 0 } }[port]);
 export function shapePolygon(node) {
   const { w, h } = nodeSize(node);
@@ -168,7 +214,6 @@ export function nearestPort(node, point) {
     return Math.hypot(p.x - point.x, p.y - point.y) - Math.hypot(q.x - point.x, q.y - point.y);
   })[0];
 }
-const textLines = (text, x, y, limit, cls, lineHeight = 25) => '<text class="' + cls + '" x="' + x + '" y="' + y + '">' + wrap(text, limit).map((line, i) => '<tspan x="' + x + '" dy="' + (i ? lineHeight : 0) + '">' + esc(line) + '</tspan>').join('') + '</text>';
 
 export function layerBounds(doc, id) {
   const nodes = doc.nodes.filter(n => n.layerId === id);
@@ -177,7 +222,7 @@ export function layerBounds(doc, id) {
     left: Math.min(-820, ...nodes.map(n => n.x - nodeSize(n).w - 55), ...tables.map(t => t.x - 100)),
     right: Math.max(820, ...nodes.map(n => n.x + nodeSize(n).w + 55), ...tables.map(t => t.x + t.width + 100)),
     top: Math.min(tables.length && !nodes.length ? -260 : -400, ...nodes.map(n => n.y - nodeSize(n).h - 65), ...tables.map(t => t.y - 100)),
-    bottom: Math.max(tables.length && !nodes.length ? 340 : 425, ...nodes.map(n => n.y + nodeSize(n).h + (n.shape === 'actor' ? 110 : 65)), ...tables.map(t => t.y + t.height + 80)),
+    bottom: Math.max(tables.length && !nodes.length ? 340 : 425, ...nodes.map(n => n.y + nodeSize(n).h + (n.shape === 'actor' ? nodeTextLayout(n).textHeight + 50 : 65)), ...tables.map(t => t.y + t.height + 80)),
   };
 }
 function plane(doc, layer, index, active) {
@@ -192,14 +237,13 @@ function diagramControls(w, h, selected) {
   const handles = selected ? `<g class="resize-controls"><rect class="selection-outline" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}"/>` + [['nw', -w, -h], ['n', 0, -h], ['ne', w, -h], ['e', w, 0], ['se', w, h], ['s', 0, h], ['sw', -w, h], ['w', -w, 0]].map(([dir, x, y]) => `<circle class="resize-handle" data-resize="${dir}" cx="${x}" cy="${y}" r="9"><title>拖动调整大小</title></circle>`).join('') + '</g>' : '';
   const ports = '<g class="connection-controls">' + ['n', 'e', 's', 'w'].map(port => {
     const v = portVector(port), angle = { e: 0, s: 90, w: 180, n: -90 }[port];
-    return `<g class="connection-port" data-port="${port}" transform="translate(${v.x * (w + 37)},${v.y * (h + 37)}) rotate(${angle})"><title>拖向另一图形建立箭头</title><rect x="-24" y="-22" width="48" height="44" fill="transparent"/><path d="M-20 -6H1V-15L22 0L1 15V6H-20Z"/></g>`;
+    return `<g class="connection-port" data-port="${port}" transform="translate(${v.x * (w + 37)},${v.y * (h + 37)}) rotate(${angle})"><title>拖向另一图形建立箭头</title><rect x="-24" y="-22" width="48" height="44" fill="transparent"/><path d="M-10 -3H1V-8L12 0L1 8V3H-10Z"/></g>`;
   }).join('') + '</g>';
   return handles + ports;
 }
 function nodeMarkup(n, selected, active, linked, connecting) {
   const { w, h } = nodeSize(n);
   const variant = n.kind === 'result' ? n.title.startsWith('✓') ? 'success' : n.title.startsWith('×') ? 'warning' : 'neutral' : n.kind;
-  const icon = { agent: '◈', input: '▧', decision: '◇', success: '✓', warning: '!', neutral: '↻' }[variant];
   const vertices = shapePolygon(n);
   const rim = h * .26;
   const back = {
@@ -214,22 +258,17 @@ function nodeMarkup(n, selected, active, linked, connecting) {
   }[n.shape] || (vertices ? `<path class="node-back" d="M${vertices.map(pt).join('L')}Z"/>` : '');
   const detail = n.shape === 'cylinder' ? `<path class="node-back" style="fill:none;filter:none;pointer-events:none" d="M${-w} ${-h + rim}A${w} ${rim} 0 0 0 ${w} ${-h + rim}"/>`
     : n.shape === 'actor' ? `<ellipse class="node-back" style="filter:none;pointer-events:none" cx="0" cy="${-.8 * h}" rx="${.36 * w}" ry="${.2 * h}"/><path class="node-back" style="fill:none;filter:none;pointer-events:none" d="M0 ${-.6 * h}V${.35 * h}M${-w} ${-.35 * h}H${w}M${-w} ${h}L0 ${.35 * h}L${w} ${h}"/>` : '';
-  const compact = ['diamond', 'ellipse', 'parallelogram', 'text'].includes(n.shape);
-  const content = n.shape === 'actor'
-    ? textLines(n.title, 0, 0, 7, 'node-title centered', 25) + (n.description ? textLines(n.description, 0, 27, 7, 'node-description centered', 25) : '')
-    : n.kind === 'shape'
-    ? textLines(n.title, 0, n.description ? -10 : 8, 7, 'node-title centered', 25) + (n.description ? textLines(n.description, 0, 20, 7, 'node-description centered', 25) : '')
-    : compact
-    ? '<text class="node-title centered" x="0" y="-12">' + esc(wrap(n.title, 7, 1)[0]) + '</text>' + textLines(n.description, 0, 16, n.shape === 'diamond' ? 5 : 6.3, 'node-description centered', 25)
-    : '<text class="node-icon" x="-81" y="-23">' + icon + '</text><text class="node-title" x="-48" y="-23">' + esc(wrap(n.title, 5.7, 1)[0]) + '</text>' + textLines(n.description, -80, 9, 6.7, 'node-description', 26);
-  const base = nodeSize({ shape: n.shape });
-  const textScale = Math.min(1, w / base.w, h / base.h);
+  const layout = nodeTextLayout(n);
+  const lineMarkup = (lines, y, cls) => '<text class="' + cls + ' centered" x="0" y="' + y + '" xml:space="preserve">' + lines.map((line,i) => '<tspan x="0" dy="' + (i ? 30 : 0) + '">' + esc(line) + '</tspan>').join('') + '</text>';
+  const top = -layout.textHeight / 2 + 23;
+  const content = lineMarkup(layout.title, top, 'node-title') + (layout.description.length ? lineMarkup(layout.description, top + layout.title.length * 30 + 8, 'node-description') : '');
+  const textTransform = 'translate(0,' + (n.shape === 'actor' ? h + 24 + layout.textHeight / 2 : layout.offset) + ') scale(' + layout.scale + ')';
   const boundary = n.shape === 'actor' ? `<rect class="connection-boundary" data-free-port="true" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}"/>` : back.replace(/class="[^"]*"/, 'class="connection-boundary" data-free-port="true"');
-  return '<g transform="translate(' + n.x + ',' + n.y + ')" class="diagram-node ' + variant + (selected ? ' selected' : '') + (active ? '' : ' dimmed') + (connecting ? ' connecting' : '') + '" data-node="' + esc(n.id) + '" data-object="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.title) + '，' + esc(n.description) + '"><title>' + esc(n.title) + '：' + esc(n.description) + '。内部拖动移动，边缘拖出连线，双击编辑。</title>' + back + detail + boundary + `<g class="node-text" transform="${n.shape === 'actor' ? 'translate(0,' + (h + 30) + ') ' : ''}scale(${textScale})">` + content + '</g>' + (linked ? '<circle class="linked-dot" cx="0" cy="' + h + '" r="5"/>' : '') + diagramControls(w, h, selected) + '</g>';
+  return '<g transform="translate(' + n.x + ',' + n.y + ')" class="diagram-node ' + variant + (selected ? ' selected' : '') + (active ? '' : ' dimmed') + (connecting ? ' connecting' : '') + '" data-node="' + esc(n.id) + '" data-object="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.title) + '，' + esc(n.description) + '"><title>' + esc(n.title) + '：' + esc(n.description) + '。内部拖动移动，边缘拖出连线，双击编辑。</title>' + back + detail + boundary + `<g class="node-text" transform="${textTransform}">` + content + '</g>' + (linked ? '<circle class="linked-dot" cx="0" cy="' + h + '" r="5"/>' : '') + diagramControls(w, h, selected) + '</g>';
 }
 function edgeMarkup(e, a, b, d, label, selected, active, transform = '') {
   const dashed = e.style === 'dashed';
-  return '<g class="flow-edge ' + (dashed ? 'data-link ' : '') + (selected ? 'selected ' : '') + (active ? '' : 'dimmed') + '" data-edge="' + esc(e.id) + '" data-label-x="' + label.x + '" data-label-y="' + label.y + '" data-label-transform="' + transform + '" tabindex="0" role="button" aria-label="连线 ' + esc(a.title) + ' 到 ' + esc(b.title) + '"><title>单击选中 · 双击编辑分支文字 · Delete 删除</title><path class="edge-hit data-link-hit" d="' + d + '"/><path class="edge-line' + (dashed ? ' data-link-line' : '') + '" d="' + d + '" marker-end="url(#' + (dashed ? 'data-arrow' : 'flow-arrow') + ')"/>' + (e.label ? '<text class="edge-label" transform="' + transform + '" x="' + label.x + '" y="' + label.y + '">' + esc(e.label) + '</text>' : '') + '</g>';
+  return '<g class="flow-edge ' + (dashed ? 'data-link ' : '') + (selected ? 'selected ' : '') + (active ? '' : 'dimmed') + '" data-edge="' + esc(e.id) + '" data-label-x="' + label.x + '" data-label-y="' + label.y + '" data-label-transform="' + transform + '" tabindex="0" role="button" aria-label="连线 ' + esc(a.title) + ' 到 ' + esc(b.title) + '"><title>单击选中 · 双击编辑分支文字 · 右键设置连线 · Delete 删除</title><path class="edge-hit data-link-hit" d="' + d + '"/><path class="edge-line' + (dashed ? ' data-link-line' : '') + '" d="' + d + '" marker-end="url(#' + (dashed ? 'data-arrow' : 'flow-arrow') + ')"' + (e.direction === 'both' ? ' marker-start="url(#' + (dashed ? 'data-arrow' : 'flow-arrow') + ')"' : '') + '/>' + (e.label ? '<text class="edge-label" transform="' + transform + '" x="' + label.x + '" y="' + label.y + '">' + esc(e.label) + '</text>' : '') + '</g>';
 }
 function localEdge(e, a, b, selected, active) {
   const dx = b.x - a.x, dy = b.y - a.y, sa = nodeSize(a), sb = nodeSize(b);
@@ -254,6 +293,7 @@ function localEdge(e, a, b, selected, active) {
     d = 'M' + pt(start) + ' C' + start.x + ',' + mid + ' ' + end.x + ',' + mid + ' ' + pt(end);
     label = { x: (start.x + end.x) / 2 + (Math.abs(dx) < 50 ? 68 : 0), y: mid - 14 };
   }
+  if (e.routing === 'straight') { d = 'M' + pt(start) + ' L' + pt(end); label = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 16 }; }
   return edgeMarkup(e, a, b, d, label, selected, active);
 }
 function tableMarkup(table, selected) {
@@ -275,6 +315,7 @@ function tableMarkup(table, selected) {
   return `<g class="shared-table ${selected ? 'selected' : ''}" transform="translate(${table.x},${table.y})" data-table="${esc(table.id)}" data-object="${esc(table.id)}" tabindex="0" role="button" aria-label="表格 ${esc(table.title)}"><title>拖动移动 · 双击编辑标题和内容 · 蓝色手柄缩放 · 四向箭头连线</title><g class="table-content"><rect class="table-body" width="${w}" height="${h}" rx="8"/><rect class="table-header" y="${header}" width="${w}" height="${colHeight}"/><text class="table-title" x="16" y="${header * .68}">${esc(wrap(table.title, Math.max(1, (w - 32) / 22), 1)[0])}</text>${grid}${content}${table.cells.length > count ? `<text class="table-footnote" x="12" y="${h - 7}">显示 ${count} / ${table.cells.length} 行 · 双击编辑全部</text>` : ''}</g><rect class="connection-boundary" data-free-port="true" width="${w}" height="${h}" rx="8"/><g class="table-controls" transform="translate(${w / 2},${h / 2})">${diagramControls(w / 2, h / 2, selected)}</g></g>`;
 }
 export function renderScene(svg, doc, camera, selection, showRelations, connectSource, activeLayerId) {
+  doc.nodes.forEach(fitNodeText);
   const selectedIds = new Set(selection?.type === 'multi' ? selection.ids : ['node', 'table'].includes(selection?.type) ? [selection.id] : []);
   const selectedNode = ['node', 'table'].includes(selection?.type) ? selection.id : null;
   const relatedNodes = new Set([selectedNode]);
@@ -285,7 +326,7 @@ export function renderScene(svg, doc, camera, selection, showRelations, connectS
   const byId = new Map(doc.nodes.map(n => [n.id, n]));
   doc.tables.forEach(t => byId.set(t.id, tableObject(doc, t.id)));
   const visibleEdges = doc.edges.filter(e => (showRelations || e.style !== 'dashed') && visibleIds.has(byId.get(e.source).layerId) && visibleIds.has(byId.get(e.target).layerId));
-  const defs = '<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#858585"/></marker><marker id="data-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#666666"/></marker><filter id="node-shadow" x="-30%" y="-40%" width="160%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#333333" flood-opacity="0.12"/></filter></defs>';
+  const defs = '<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#858585"/></marker><marker id="data-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#666666"/></marker><filter id="node-shadow" x="-30%" y="-40%" width="160%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#333333" flood-opacity="0.12"/></filter></defs>';
   const sorted = camera.mode === 'spatial' && Math.cos(radians(camera.tilt)) < 0 ? [...visibleLayers] : [...visibleLayers].reverse();
   const bridges = new Map(doc.layers.map(layer => [layer.id, []]));
   const sameLayerLinks = new Map(doc.layers.map(layer => [layer.id, []]));
@@ -296,7 +337,7 @@ export function renderScene(svg, doc, camera, selection, showRelations, connectS
       bridges.get(upper.id).push(html);
     }
   }
-  visibleEdges.filter(e => e.style === 'dashed').forEach(e => {
+  visibleEdges.filter(e => e.style === 'dashed' && byId.get(e.source).layerId !== byId.get(e.target).layerId).forEach(e => {
     const a = byId.get(e.source), b = byId.get(e.target);
     const siblings = visibleEdges.filter(other => other.style === 'dashed' && other.target === e.target);
     const start = portPoint(a, e.sourcePort || 's'), end = portPoint(b, e.targetPort || 'n');
@@ -304,7 +345,7 @@ export function renderScene(svg, doc, camera, selection, showRelations, connectS
     const p = project(start.x, start.y, layerZ(doc, a.layerId, camera), camera);
     const q = project(end.x, end.y, layerZ(doc, b.layerId, camera), camera);
     const direction = Math.sign(q.y - p.y) || 1;
-    const { d, label } = typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: `M${pt(p)} C${p.x},${p.y + direction * 85} ${q.x},${q.y - direction * 85} ${pt(q)}`, label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 } };
+    const { d, label } = e.routing === 'straight' ? {d: 'M' + pt(p) + ' L' + pt(q), label: {x:(p.x+q.x)/2,y:(p.y+q.y)/2-16}} : typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: `M${pt(p)} C${p.x},${p.y + direction * 85} ${q.x},${q.y - direction * 85} ${pt(q)}`, label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 } };
     placeLink(edgeMarkup(e, a, b, d, label, selection?.id === e.id, !selectedNode || a.id === selectedNode || b.id === selectedNode), a.layerId, b.layerId);
   });
   visibleEdges.filter(e => e.style !== 'dashed' && byId.get(e.source).layerId !== byId.get(e.target).layerId).forEach(e => {
@@ -312,12 +353,12 @@ export function renderScene(svg, doc, camera, selection, showRelations, connectS
     const start = portPoint(a, e.sourcePort || 's'), end = portPoint(b, e.targetPort || 'n');
     const p = project(start.x, start.y, layerZ(doc, a.layerId, camera), camera);
     const q = project(end.x, end.y, layerZ(doc, b.layerId, camera), camera);
-    const { d, label } = typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: 'M' + pt(p) + ' C' + p.x + ',' + ((p.y + q.y) / 2) + ' ' + q.x + ',' + ((p.y + q.y) / 2) + ' ' + pt(q), label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 - 15 } };
+    const { d, label } = e.routing === 'straight' ? {d: 'M' + pt(p) + ' L' + pt(q), label: {x:(p.x+q.x)/2,y:(p.y+q.y)/2-16}} : typeof e.sourcePort === 'object' || typeof e.targetPort === 'object' ? projectedFreeCurve(e, a, b, start, end, camera, doc) : { d: 'M' + pt(p) + ' C' + p.x + ',' + ((p.y + q.y) / 2) + ' ' + q.x + ',' + ((p.y + q.y) / 2) + ' ' + pt(q), label: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 - 15 } };
     return placeLink(edgeMarkup(e, a, b, d, label, selection?.id === e.id, !selectedNode || a.id === selectedNode || b.id === selectedNode), a.layerId, b.layerId);
   });
   const contents = sorted.map(layer => {
     const nodes = doc.nodes.filter(n => n.layerId === layer.id);
-    const edges = visibleEdges.filter(e => e.style !== 'dashed' && byId.get(e.source).layerId === layer.id && byId.get(e.target).layerId === layer.id).map(e => localEdge(e, byId.get(e.source), byId.get(e.target), selection?.id === e.id, !selectedNode || e.source === selectedNode || e.target === selectedNode)).join('');
+    const edges = visibleEdges.filter(e => byId.get(e.source).layerId === layer.id && byId.get(e.target).layerId === layer.id).map(e => localEdge(e, byId.get(e.source), byId.get(e.target), selection?.id === e.id, !selectedNode || e.source === selectedNode || e.target === selectedNode)).join('');
     const nodeHtml = nodes.map(n => nodeMarkup(n, selectedIds.has(n.id), !selectedNode || relatedNodes.has(n.id), relatedAgents.has(n.id), connectSource === n.id)).join('');
     const table = doc.tables.filter(t => t.layerId === layer.id).map(t => tableMarkup(t, selectedIds.has(t.id))).join('');
     const empty = '';

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.mjs';
+import { test, expect, fitFixture } from './fixtures.mjs';
 import { readFileSync } from 'node:fs';
 import { exampleDocument } from '../fixtures/example.mjs';
 const base = 'drawai.document.v1';
@@ -50,6 +50,7 @@ test('workspaces isolate diagrams, draft commits, undo, names and reload; export
 test('existing diagram remains in the default workspace; invalid workspace storage does not replace it', async ({ page }) => {
   const old = exampleDocument(); old.nodes[0].title = '保留旧内容';
   await page.goto('/'); await page.evaluate(({ base, old }) => localStorage.setItem(base, JSON.stringify(old)), { base, old }); await page.reload();
+  Object.assign(old,await fitFixture(page,old));
   const second = await addWorkspace(page, '另一项目'); await page.locator('[data-workspace="default"]').click();
   expect(await stored(page)).toEqual(old);
   await page.evaluate(({ base, second }) => localStorage.setItem(base + '.workspace.' + second, 'bad data'), { base, second }); await page.reload();
@@ -74,7 +75,7 @@ for (const mode of ['flat', 'spatial']) test(`layers move up/down without changi
   await page.goto('/'); await page.locator('#view-' + mode).click();
   await page.locator('[data-select-layer="flow"]').click();
   const beforeTransform = await page.locator('[data-layer-content="flow"]').evaluate(el => el.querySelector('svg[data-projection]')?.dataset.projection || null);
-  const before = exampleDocument();
+  const before = await fitFixture(page,exampleDocument());
   await expect(page.locator('[data-move-layer="flow"][data-offset="-1"]')).toBeDisabled();
   await expect(page.locator('[data-move-layer="data"][data-offset="1"]')).toBeDisabled();
   await page.locator('[data-move-layer="data"][data-offset="-1"]').click();

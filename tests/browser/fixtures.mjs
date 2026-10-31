@@ -15,3 +15,8 @@ export const test = base.extend({ page: async ({ page }, use) => {
   await use(page);
 } });
 export { expect };
+
+// Expected baseline after opening an older file: text now expands undersized shapes.
+export async function fitFixture(page, doc) {
+  return page.evaluate(async doc => { const {fitNodeText}=await import('/src/scene.js');doc.nodes.forEach(fitNodeText);return doc; },doc);
+}

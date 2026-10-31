@@ -165,13 +165,15 @@ export function validateDocument(value) {
     const p = 'edges[' + i + ']'; object(e, p); identifier(e.id, p + '.id', edgeIds);
     check(ids.has(e.source), p + '.source', '引用的图形或表格不存在'); check(ids.has(e.target), p + '.target', '引用的图形或表格不存在');
     check(e.source !== e.target, p, '不支持连接自身');
+    check(e.direction === undefined || ['forward', 'both'].includes(e.direction), p + '.direction', '只能为 forward 或 both');
+    check(e.routing === undefined || ['straight', 'curved'].includes(e.routing), p + '.routing', '只能为 straight 或 curved');
     check(e.style === undefined || ['solid', 'dashed'].includes(e.style), p + '.style', '只能为 solid 或 dashed');
     const pair = JSON.stringify([e.source, e.target, e.style ?? 'solid']); check(!pairs.has(pair), p, '同一起终点和样式的连线重复');
     check(str(e.label, 60), p + '.label', '必须为字符串，最多 60 字');
     for (const key of ['sourcePort', 'targetPort']) if (e[key] !== undefined) check(validPort(e[key]), p + '.' + key, '连接点无效');
     edgeIds.add(e.id); pairs.add(pair);
   }
-  return { version: 3, layers: value.layers.map(({ id, name }) => ({ id, name })), nodes: value.nodes.map(({ id, kind, shape, layerId, title, description, x, y, width, height }) => ({ id, kind, shape, layerId, title, description, x, y, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) })), tables: value.tables.map(({ id, layerId, x, y, width, height, title, columns, cells }) => ({ id, layerId, x, y, width, height, title, columns: [...columns], cells: cells.map(row => [...row]) })), edges: value.edges.map(({ id, source, target, label, sourcePort, targetPort, style }) => ({ id, source, target, label, ...(sourcePort ? { sourcePort: copyPort(sourcePort) } : {}), ...(targetPort ? { targetPort: copyPort(targetPort) } : {}), ...(style ? { style } : {}) })) };
+  return { version: 3, layers: value.layers.map(({ id, name }) => ({ id, name })), nodes: value.nodes.map(({ id, kind, shape, layerId, title, description, x, y, width, height }) => ({ id, kind, shape, layerId, title, description, x, y, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) })), tables: value.tables.map(({ id, layerId, x, y, width, height, title, columns, cells }) => ({ id, layerId, x, y, width, height, title, columns: [...columns], cells: cells.map(row => [...row]) })), edges: value.edges.map(({ id, source, target, label, sourcePort, targetPort, style, direction, routing }) => ({ id, source, target, label, ...(sourcePort ? { sourcePort: copyPort(sourcePort) } : {}), ...(targetPort ? { targetPort: copyPort(targetPort) } : {}), ...(style ? { style } : {}), ...(direction ? { direction } : {}), ...(routing ? { routing } : {}) })) };
 }
 
 export class History {

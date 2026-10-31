@@ -19,8 +19,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
-[assembly: System.Reflection.AssemblyVersion("0.7.4.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.7.4.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.5.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.5.0")]
 
 namespace DrawAI.WebViewEdition {
 static class Program {

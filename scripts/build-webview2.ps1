@@ -2,7 +2,7 @@
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sdkVersion = '1.0.4314.35'
 $sdkRoot = Join-Path $repo '.local/webview2-sdk/package'
-$output = Join-Path $repo 'releases/DrawAI-WebView2-0.7.4-win-x64'
+$output = Join-Path $repo 'releases/DrawAI-WebView2-0.7.5-win-x64'
 $web = Join-Path $output 'web'
 $temporary = Join-Path $repo '.local/webview2-build-temp'
 New-Item -ItemType Directory -Force -Path $output,$web,(Join-Path $web 'src'),(Join-Path $web 'native'),$temporary | Out-Null
@@ -36,7 +36,7 @@ $compilerArgs = @('/nologo','/target:winexe','/platform:x64','/optimize+','/utf8
 if ($LASTEXITCODE -ne 0) { throw 'WebView2 host compilation failed' }
 [IO.File]::WriteAllText((Join-Path $output 'DrawAI-WebView2.exe.config'), '<?xml version="1.0"?><configuration><startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.6.2"/></startup></configuration>', $utf8)
 # Explicit archive allowlist excludes the data directory from previous test runs.
-$archive = Join-Path $repo 'releases/DrawAI-WebView2-0.7.4-Windows-x64.zip'
+$archive = Join-Path $repo 'releases/DrawAI-WebView2-0.7.5-Windows-x64.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }

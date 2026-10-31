@@ -10,7 +10,7 @@ export async function launchWebView(filename, existingDirectory) {
   const directory = existingDirectory || await mkdtemp(path.join(base, 'run-'));
   const socket = net.createServer(); await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
   const port = socket.address().port; await new Promise(resolve => socket.close(resolve));
-  const executable = path.resolve('releases/DrawAI-WebView2-0.7.4-win-x64/DrawAI-WebView2.exe');
+  const executable = path.resolve('releases/DrawAI-WebView2-0.7.5-win-x64/DrawAI-WebView2.exe');
   const env = { ...process.env, DRAWAI_WV_TEST: '1', DRAWAI_WV_DATA_DIR: path.join(directory, 'profile'), DRAWAI_WV_DEBUG_PORT: String(port), TEMP: directory, TMP: directory };
   const child = spawn(executable, filename ? [filename] : [], { env, windowsHide: true, stdio: 'ignore' });
   let browser;

@@ -17,7 +17,7 @@
 .node-actions{display:flex;align-items:center;gap:3px}
 .node-actions button{height:24px;font-size:10px;color:#7c7c7c;padding:3px 8px;border-radius:4px;background:#f4f4f4}
 .node-inline-editor{overflow:visible;cursor:text;pointer-events:auto}
-.inline-text-fields{box-sizing:border-box;width:200px;height:112px;padding:6px 9px;background:#ffffff;border:2px solid #7d7d7d;border-radius:8px;display:flex;flex-direction:column;gap:3px;user-select:text;box-shadow:0 3px 10px #48484825}
+.inline-text-fields{box-sizing:border-box;width:100%;height:100%;padding:6px 9px;background:#ffffff;border:2px solid #7d7d7d;border-radius:8px;display:flex;flex-direction:column;gap:3px;user-select:text;box-shadow:0 3px 10px #48484825}
 .inline-text-fields input,.inline-text-fields textarea{box-sizing:border-box;display:block;width:100%;min-width:0;border:0;outline:0;background:transparent;color:#4f4f4f;padding:0 3px;font-family:"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.25;user-select:text}
 .inline-text-fields input{height:32px;flex-shrink:0;font-size:23px;font-weight:650}
 .inline-text-fields textarea{flex:1;min-height:0;resize:none;font-size:21px;font-weight:400}
@@ -235,3 +235,8 @@ button:focus-visible,a:focus-visible{outline-color:var(--accent)}
 .ai-panel{overflow:auto}.ai-panel details{max-height:clamp(110px,calc(100dvh - 550px),295px)}
 
 .ai-log-dialog{width:min(880px,94vw);max-height:90dvh;border:1px solid #ddd;border-radius:10px;padding:20px;color:#333}.ai-log-dialog::backdrop{background:#0005}.ai-log-heading,.ai-log-actions{display:flex;align-items:center;gap:12px}.ai-log-heading{justify-content:space-between}.ai-log-dialog p,.ai-log-dialog label,.ai-log-dialog small{font-size:12px;color:#777}.ai-log-dialog select{display:block;width:100%;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:5px}.ai-log-dialog textarea{width:100%;height:48dvh;resize:vertical;white-space:pre;font:12px/1.6 Consolas,monospace;padding:12px;border:1px solid #ddd;background:#fafafa;border-radius:5px}.ai-log-actions{margin:10px 0;flex-wrap:wrap;font-size:12px}.ai-log-dialog small{display:block;overflow-wrap:anywhere}
+
+.edge-context-menu{position:fixed;z-index:40;min-width:156px;padding:6px;background:#fff;border:1px solid #ddd;border-radius:9px;box-shadow:0 8px 30px #0002;font-size:13px}
+.edge-menu-heading{padding:5px 9px 3px;font-size:11px;color:#888;border-top:1px solid #eee;margin-top:3px}.edge-menu-heading:first-child{border:0;margin:0}
+.edge-context-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:6px 9px;border-radius:5px;text-align:left}.edge-context-menu button span{width:14px;color:var(--accent-text)}
+.edge-context-menu button:hover,.edge-context-menu button:focus-visible{background:var(--accent-soft);outline:none}.edge-context-menu [aria-checked=true]{color:var(--accent-text)}

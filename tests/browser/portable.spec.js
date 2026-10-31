@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.mjs';
+import { test, expect, fitFixture } from './fixtures.mjs';
 import { readFileSync } from 'node:fs';
 import { createTable, validateDiagramFile } from '../../src/model.js';
 import { exampleDocument } from '../fixtures/example.mjs';
@@ -19,6 +19,7 @@ test('DrawAI export commits inline edits and round-trips every table, port, name
   await page.locator('#inline-node-title').fill('打开时就是这张图');
   const payload = await exportFile(page);
   doc.nodes.find(n => n.id === 'agent2').title = '打开时就是这张图';
+  Object.assign(doc, await fitFixture(page,doc));
   expect(payload.document).toEqual(doc); expect(payload.view.mode).toBe('flat'); expect(payload.workspaceName).toBe('门店陈列检查');
   const context = await browser.newContext(), reopened = await context.newPage(); await reopened.goto('/');
   await reopened.locator('#import-file').setInputFiles({ name: '中文图表.drawai', mimeType: 'application/octet-stream', buffer: Buffer.from('\uFEFF' + JSON.stringify(payload)) });

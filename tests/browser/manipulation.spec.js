@@ -18,13 +18,14 @@ for (const mode of ['flat', 'spatial']) test(`eight handles resize with fixed op
   await page.locator('[data-list-node="agent2"]').click();
   const node = page.locator('[data-node="agent2"]');
   await expect(node.locator('[data-resize]')).toHaveCount(8);
-  const a = await point(page, '[data-node="agent2"]', 100, 56);
-  const b = await point(page, '[data-node="agent2"]', 170, 96);
+  const h = +(await node.locator('[data-resize="se"]').getAttribute('cy'));
+  const a = await point(page, '[data-node="agent2"]', 100, h);
+  const b = await point(page, '[data-node="agent2"]', 170, h+40);
   const edgeBefore = await page.locator('[data-edge="edge-4"] .edge-line').getAttribute('d');
   await dragTo(page, a, b);
   const saved = (await stored(page)).nodes.find(n => n.id === 'agent2');
-  expect(saved.width).toBeCloseTo(270, 0); expect(saved.height).toBeCloseTo(152, 0);
-  expect(saved.x - saved.width / 2).toBe(-495); expect(saved.y - saved.height / 2).toBe(-56);
+  expect(saved.width).toBeCloseTo(270, 0); expect(saved.height).toBeCloseTo(h*2+40, 0);
+  expect(saved.x - saved.width / 2).toBe(-495); expect(saved.y - saved.height / 2).toBe(-h);
   expect(await page.locator('[data-edge="edge-4"] .edge-line').getAttribute('d')).not.toBe(edgeBefore);
   await expect(page.locator('#inspector')).toBeHidden();
   await page.screenshot({ path: `test-results/resize-${mode}.png` });
@@ -153,11 +154,12 @@ test('branch text accepts Chinese composition, cancels with Escape and saves out
 
 test('resizing from an edge keeps height and opposite edge; Escape restores original dimensions', async ({ page }) => {
   await page.locator('#view-flat').click(); await page.locator('[data-list-node="retake"]').click();
+  const originalHeight = +(await page.locator('[data-node="retake"] .node-back').getAttribute('ry')) * 2;
   const a = await point(page, '[data-node="retake"]', -105, 0);
   const b = await point(page, '[data-node="retake"]', -165, 0);
   await dragTo(page, a, b);
   const saved = (await stored(page)).nodes.find(n => n.id === 'retake');
-  expect(saved.width).toBe(270); expect(saved.height).toBe(140); expect(saved.x + saved.width / 2).toBe(-35);
+  expect(saved.width).toBe(270); expect(saved.height).toBe(originalHeight); expect(saved.x + saved.width / 2).toBe(-35);
   const c = await point(page, '[data-node="retake"]', -135, 0);
   await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(c.x - 35, c.y, { steps: 6 });
   await page.keyboard.press('Escape'); await page.mouse.up();

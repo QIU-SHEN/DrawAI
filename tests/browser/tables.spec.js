@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.mjs';
+import { test, expect, fitFixture } from './fixtures.mjs';
 import { readFileSync } from 'node:fs';
 import { validateDocument } from '../../src/model.js';
 import { exampleDocument } from '../fixtures/example.mjs';
@@ -84,7 +84,7 @@ test('deleting one table or its layer only removes its own links, and undo resto
   const fixture = exampleDocument();
   fixture.tables.push({ ...structuredClone(fixture.tables[0]), id: 'second-table', layerId: 'flow', x: -700, y: 500 });
   fixture.edges.push({ id: 'table-to-table', source: 'table-shared', target: 'second-table', label: '表间连线' });
-  await load(page, fixture); await flat(page, 'data');
+  await load(page, fixture); await flat(page, 'data'); Object.assign(fixture,await fitFixture(page,fixture));
   await page.locator('[data-list-node="table-shared"]').click(); await page.keyboard.press('Delete');
   const removed = await stored(page); expect(removed.tables.map(t => t.id)).toEqual(['second-table']);
   expect(removed.edges.every(e => e.source !== 'table-shared' && e.target !== 'table-shared')).toBe(true);

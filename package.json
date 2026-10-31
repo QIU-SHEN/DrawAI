@@ -14,7 +14,7 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "predesktop": "npm run build:webview2",
-    "desktop": "powershell.exe -NoProfile -Command \"& ./releases/DrawAI-WebView2-0.7.2-win-x64/DrawAI-WebView2.exe\"",
+    "desktop": "powershell.exe -NoProfile -Command \"& ./releases/DrawAI-WebView2-0.7.3-win-x64/DrawAI-WebView2.exe\"",
     "build:desktop": "npm run build:webview2",
     "build:webview2": "npm run build && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-webview2.ps1",
     "test:desktop": "npm run test:webview2",

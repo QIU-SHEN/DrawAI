@@ -25,6 +25,7 @@ export const aiSystemPrompt = `你是 DrawAI 的图表编辑助手。根据用�
 可用 shape：${Object.entries(shapes).map(([id,name]) => id + '=' + name).join(', ')}。
 节点坐标为中心；宽80~2400，高60~2400，常用圆柱180×180、人形100×180、菱形260×180。人形名称在下方。
 表格：{"id":"t1","layerId":"flow","title":"表格","x":-360,"y":200,"width":720,"height":280,"columns":["列1","列2"],"cells":[["内容1","内容2"]]}。表格坐标为左上角，宽240~4000，高100~4000，每行单元格数量必须等于列数。
+表格只能放在 tables 数组，绝不要在 nodes 中再添加 kind="table" 的副本或占位节点。连线直接引用 tables 中的 ID 即可。
 连线：{"id":"e1","source":"n1","target":"n2","label":"","sourcePort":"e","targetPort":"w","style":"solid"}。source/target引用节点或表格ID；端口n/e/s/w；style可为solid或dashed。跨图层关系用dashed。不要悬空连线、自连或同起终点同样式的重复连线。
 ID仅用英文字母、数字、下划线、连字符，长度1~80。节点/表格ID不能重复，连线ID不能重复。节点名称非空且最多60字，说明最多240字，连线文字最多60字，图层名称最多60字；表格标题/列名最多100字，单元格最多1000字。坐标绝对值最多10000。
 最多20层、200节点、50表格、1200连线；每表最多20列500行，所有表格合计最多10000单元格，至少1层。
@@ -47,9 +48,29 @@ export function aiResult(raw) {
   if (!value || typeof value.message !== 'string' || value.message.length > 12000 || !Object.hasOwn(value, 'document')) throw new Error('AI 回复格式不符合要求，画布未修改。');
   if (value.document === null) return { message: value.message, document: null };
   try {
-    if (value.document.version !== 3) throw new Error('version');
-    return { message: value.message, document: validateDocument(value.document) };
-  } catch (cause) { throw new Error('AI 图表存在无效图形、尺寸或连线引用，画布未修改。请让模型检查后重试。', { cause }); }
+    if (value.document?.version !== 3) throw new Error('document.version：必须为数字 3。');
+    const { document, merged } = normalizeAITables(value.document);
+    const validated = validateDocument(document);
+    return { message: value.message + (merged ? '\n已合并 ' + merged + ' 处完全相同的表格副本，保留表格内容和关联连线。' : ''), document: validated };
+  } catch (cause) { throw new Error('AI 图表存在无效数据：' + cause.message + ' 画布未修改。', { cause }); }
+}
+
+// Some models repeat an identical table in nodes. Only that unambiguous duplicate
+// is removed; conflicting definitions and ordinary node/table ID collisions fail.
+function normalizeAITables(document) {
+  if (!Array.isArray(document.nodes) || !Array.isArray(document.tables) || document.nodes.length > 250 || document.tables.length > 50) return { document, merged: 0 };
+  let merged = 0;
+  const nodes = document.nodes.filter((node, index) => {
+    if (node?.kind !== 'table') return true;
+    const matches = document.tables.filter(table => table && table.id === node.id);
+    if (matches.length !== 1) return true;
+    const table = matches[0], fields = Object.keys(node).filter(key => key !== 'kind');
+    if (fields.length !== Object.keys(table).length || fields.some(key => !Object.hasOwn(table, key) || JSON.stringify(node[key]) !== JSON.stringify(table[key]))) {
+      throw new Error('nodes[' + index + '] 与 tables[' + document.tables.indexOf(table) + '] 的同名表格字段不一致，无法自动合并。');
+    }
+    merged++; return false;
+  });
+  return { document: { ...document, nodes }, merged };
 }
 export function aiResponse(text, status) {
   if (status < 200 || status >= 300) {

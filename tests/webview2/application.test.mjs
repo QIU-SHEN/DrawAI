@@ -202,3 +202,17 @@ test('unwritable AI logs report failure without blocking drawing', { timeout: 30
     await expect(host.page.locator('#ai-send')).toBeEnabled();
   } finally {await host.stop();await api.close();}
 });
+
+test('identical AI table duplicates apply once and undo together; conflicts identify fields', {timeout:30000}, async()=>{
+  const {mockAPI,configureAI,promptAI,completion,generated}=await import('../fixtures/ai.mjs');
+  const api=await mockAPI(),host=await launchWebView();
+  try {
+    const doc=generated(),table={id:'t1',layerId:'flow',title:'资料',x:-300,y:240,width:720,height:200,columns:['项目'],cells:[['内容']]};
+    doc.tables.push(table);doc.nodes.push({...table,kind:'table'});doc.edges.push({id:'e2',source:'review',target:'t1',label:'记录',style:'dashed'});
+    api.setHandler((_req,res)=>res.end(JSON.stringify(completion(doc))));
+    await configureAI(host.page,api.url);await promptAI(host.page,'生成带表格的流程');
+    await expect(host.page.locator('.diagram-node')).toHaveCount(2);await expect(host.page.locator('.shared-table')).toHaveCount(1);await expect(host.page.locator('#ai-messages')).toContainText('合并 1 处');
+    await host.page.locator('#ai-undo').click();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
+    doc.nodes[2].cells=[['不同内容']];await promptAI(host.page,'冲突表格');await expect(host.page.locator('#ai-status')).toContainText('nodes[2] 与 tables[0]');await expect(host.page.locator('#ai-send')).toBeEnabled();await expect(host.page.locator('.diagram-node,.shared-table')).toHaveCount(0);
+  }finally{await host.stop();await api.close();}
+});

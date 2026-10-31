@@ -122,34 +122,53 @@ function migrateLegacy(value) {
 
 export function validateDocument(value) {
   if (value?.version === 1 || value?.version === 2) return validateDocument(migrateLegacy(validateLegacy(value)));
-  const fail = () => { throw new Error('文件格式不正确：请导入由 DrawAI 导出的 JSON。'); };
+  const check = (ok, path, reason) => { if (!ok) throw new Error('文件格式不正确：' + path + '：' + reason + '。'); };
   const str = (v, max) => typeof v === 'string' && v.length <= max;
   const idOk = v => str(v, 80) && /^[\w-]+$/.test(v);
   const coordinate = v => Number.isFinite(v) && Math.abs(v) <= 10000;
   const size = (v, min, max) => Number.isFinite(v) && v >= min && v <= max;
-  if (!value || value.version !== 3 || !Array.isArray(value.layers) || value.layers.length < 1 || value.layers.length > 20 || !Array.isArray(value.nodes) || value.nodes.length > 200 || !Array.isArray(value.tables) || value.tables.length > 50 || !Array.isArray(value.edges) || value.edges.length > 1200) fail();
+  check(value && value.version === 3, 'document.version', '必须为数字 3');
+  for (const [key, min, max] of [['layers', 1, 20], ['nodes', 0, 200], ['tables', 0, 50], ['edges', 0, 1200]]) check(Array.isArray(value[key]) && value[key].length >= min && value[key].length <= max, key, '必须为数组，数量范围 ' + min + '–' + max);
   const layers = new Set(), ids = new Set(), edgeIds = new Set();
-  for (const l of value.layers) {
-    if (!l || !idOk(l.id) || layers.has(l.id) || !str(l.name, 60) || !l.name.trim()) fail();
-    layers.add(l.id);
+  const object = (v, path) => check(v && typeof v === 'object' && !Array.isArray(v), path, '必须为对象');
+  const identifier = (v, path, seen) => { check(idOk(v), path, '必须为 1–80 位字母、数字、下划线或连字符'); check(!seen.has(v), path, 'ID 重复（' + v + '）'); };
+  const position = (v, path) => { for (const key of ['x', 'y']) check(coordinate(v[key]), path + '.' + key, '必须为 -10000 至 10000 的数字'); };
+  for (const [i, l] of value.layers.entries()) {
+    const p = 'layers[' + i + ']'; object(l, p); identifier(l.id, p + '.id', layers);
+    check(str(l.name, 60) && l.name.trim(), p + '.name', '必须为非空字符串，最多 60 字'); layers.add(l.id);
   }
-  for (const n of value.nodes) {
-    if (!n || !idOk(n.id) || ids.has(n.id) || !Object.hasOwn(kinds, n.kind) || !Object.hasOwn(shapes, n.shape) || !layers.has(n.layerId) || !str(n.title, 60) || !n.title.trim() || !str(n.description, 240) || !coordinate(n.x) || !coordinate(n.y)) fail();
-    for (const k of ['width', 'height']) if (n[k] !== undefined && !size(n[k], k === 'width' ? 80 : 60, 2400)) fail();
+  for (const [i, n] of value.nodes.entries()) {
+    const p = 'nodes[' + i + ']'; object(n, p); identifier(n.id, p + '.id', ids);
+    check(Object.hasOwn(kinds, n.kind), p + '.kind', '类型无效；表格只能放入 tables 数组');
+    check(Object.hasOwn(shapes, n.shape), p + '.shape', '图形类型无效');
+    check(layers.has(n.layerId), p + '.layerId', '引用的图层不存在');
+    check(str(n.title, 60) && n.title.trim(), p + '.title', '必须为非空字符串，最多 60 字');
+    check(str(n.description, 240), p + '.description', '必须为字符串，最多 240 字；无说明请使用空字符串'); position(n, p);
+    for (const key of ['width', 'height']) if (n[key] !== undefined) check(size(n[key], key === 'width' ? 80 : 60, 2400), p + '.' + key, '必须为 ' + (key === 'width' ? 80 : 60) + '–2400 的数字');
     ids.add(n.id);
   }
   let cellCount = 0;
-  for (const t of value.tables) {
-    if (!t || !idOk(t.id) || ids.has(t.id) || !layers.has(t.layerId) || !coordinate(t.x) || !coordinate(t.y) || !size(t.width, 240, 4000) || !size(t.height, 100, 4000) || !str(t.title, 100) || !Array.isArray(t.columns) || !t.columns.length || t.columns.length > 20 || !t.columns.every(c => str(c, 100)) || !Array.isArray(t.cells) || t.cells.length > 500 || !t.cells.every(row => Array.isArray(row) && row.length === t.columns.length && row.every(c => str(c, 1000)))) fail();
-    cellCount += t.columns.length * t.cells.length;
-    if (cellCount > 10000) fail();
-    ids.add(t.id);
+  for (const [i, t] of value.tables.entries()) {
+    const p = 'tables[' + i + ']'; object(t, p); identifier(t.id, p + '.id', ids);
+    check(layers.has(t.layerId), p + '.layerId', '引用的图层不存在'); position(t, p);
+    check(size(t.width, 240, 4000), p + '.width', '必须为 240–4000 的数字');
+    check(size(t.height, 100, 4000), p + '.height', '必须为 100–4000 的数字');
+    check(str(t.title, 100), p + '.title', '必须为字符串，最多 100 字');
+    check(Array.isArray(t.columns) && t.columns.length >= 1 && t.columns.length <= 20, p + '.columns', '必须为 1–20 列的数组');
+    t.columns.forEach((c, j) => check(str(c, 100), p + '.columns[' + j + ']', '必须为字符串，最多 100 字'));
+    check(Array.isArray(t.cells) && t.cells.length <= 500, p + '.cells', '必须为数组，最多 500 行');
+    t.cells.forEach((row, j) => { check(Array.isArray(row) && row.length === t.columns.length, p + '.cells[' + j + ']', '单元格数量必须等于列数'); row.forEach((c, k) => check(str(c, 1000), p + '.cells[' + j + '][' + k + ']', '必须为字符串，最多 1000 字')); });
+    cellCount += t.columns.length * t.cells.length; check(cellCount <= 10000, 'tables', '所有表格合计最多 10000 个单元格'); ids.add(t.id);
   }
   const pairs = new Set();
-  for (const e of value.edges) {
-    const pair = JSON.stringify([e?.source, e?.target, e?.style ?? 'solid']);
-    if (!e || !idOk(e.id) || edgeIds.has(e.id) || !ids.has(e.source) || !ids.has(e.target) || e.source === e.target || pairs.has(pair) || !str(e.label, 60) || (e.style !== undefined && !['solid', 'dashed'].includes(e.style))) fail();
-    for (const k of ['sourcePort', 'targetPort']) if (e[k] !== undefined && !validPort(e[k])) fail();
+  for (const [i, e] of value.edges.entries()) {
+    const p = 'edges[' + i + ']'; object(e, p); identifier(e.id, p + '.id', edgeIds);
+    check(ids.has(e.source), p + '.source', '引用的图形或表格不存在'); check(ids.has(e.target), p + '.target', '引用的图形或表格不存在');
+    check(e.source !== e.target, p, '不支持连接自身');
+    check(e.style === undefined || ['solid', 'dashed'].includes(e.style), p + '.style', '只能为 solid 或 dashed');
+    const pair = JSON.stringify([e.source, e.target, e.style ?? 'solid']); check(!pairs.has(pair), p, '同一起终点和样式的连线重复');
+    check(str(e.label, 60), p + '.label', '必须为字符串，最多 60 字');
+    for (const key of ['sourcePort', 'targetPort']) if (e[key] !== undefined) check(validPort(e[key]), p + '.' + key, '连接点无效');
     edgeIds.add(e.id); pairs.add(pair);
   }
   return { version: 3, layers: value.layers.map(({ id, name }) => ({ id, name })), nodes: value.nodes.map(({ id, kind, shape, layerId, title, description, x, y, width, height }) => ({ id, kind, shape, layerId, title, description, x, y, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) })), tables: value.tables.map(({ id, layerId, x, y, width, height, title, columns, cells }) => ({ id, layerId, x, y, width, height, title, columns: [...columns], cells: cells.map(row => [...row]) })), edges: value.edges.map(({ id, source, target, label, sourcePort, targetPort, style }) => ({ id, source, target, label, ...(sourcePort ? { sourcePort: copyPort(sourcePort) } : {}), ...(targetPort ? { targetPort: copyPort(targetPort) } : {}), ...(style ? { style } : {}) })) };

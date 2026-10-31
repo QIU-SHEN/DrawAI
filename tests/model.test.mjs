@@ -283,3 +283,19 @@ test('neutral polygon shapes round-trip and both snapped/free anchors stay on th
     }
   }
 });
+
+test('cylinder and actor retain free anchors through resize and file round trips', () => {
+  const doc = { version:3, layers:[{id:'flow',name:'图形'}], nodes:['cylinder','actor'].map((shape,i)=>({id:'n'+i,kind:'shape',shape,layerId:'flow',title:shape,description:'自由文字',x:0,y:0,width:180,height:180})),tables:[],edges:[] };
+  addEdge(doc, 'n0', 'n1', 'e', 'w');
+  assert.deepEqual(validateDocument(JSON.parse(JSON.stringify(doc))), doc);
+  for (const n of doc.nodes) for (const raw of [{x:50,y:-85},{x:70,y:90},{x:90,y:20}]) {
+    const anchor = freePort(n,raw), p = portPoint(n,anchor), repeat = perimeterPoint(n,p);
+    assert.ok(Math.hypot(p.x-repeat.x,p.y-repeat.y)<1e-8);
+    if(n.shape==='cylinder') {
+      const r=90*.26;
+      assert.ok(Math.abs(p.x)===90 || Math.abs((p.x/90)**2+((Math.abs(p.y)-(90-r))/r)**2-1)<1e-8);
+    }
+    const resized=portPoint({...n,width:360,height:360},anchor);
+    assert.ok(Math.hypot(resized.x-p.x*2,resized.y-p.y*2)<1e-8);
+  }
+});

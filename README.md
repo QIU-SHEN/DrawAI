@@ -16,11 +16,15 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 ![平面流程编辑](docs/images/flat.png)
 
+圆柱体与人形：普通图形，可自由命名、缩放、移动和连接。
+
+![圆柱体与人形](docs/images/shapes.png)
+
 首次启动是空白画布。顶部原生「主题」菜单可以切换强调色，黑白灰画布保持不变，下图为天空蓝主题。
 
 ![空白画布与天空蓝主题](docs/images/theme-blue.png)
 
-> 截图已更新至 0.5.0。前两张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
+> 截图已更新至 0.6.0。前三张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
 
 ## 在线试用
 
@@ -34,8 +38,8 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 | 版本 | 下载 | 适合情况 |
 | --- | --- | --- |
-| **WebView2 0.5.0（推荐）** | [Windows x64 ZIP，约 380 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.5.0/DrawAI-WebView2-0.5.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
-| Electron 0.5.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.5.0/DrawAI-0.5.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
+| **WebView2 0.6.0（推荐）** | [Windows x64 ZIP，约 381 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.6.0/DrawAI-WebView2-0.6.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
+| Electron 0.6.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.6.0/DrawAI-0.6.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
 
 1. 下载 ZIP，**完整解压**到有写入权限的文件夹。
 2. 运行 `DrawAI-WebView2.exe` 或 `DrawAI.exe`。不要只复制 EXE，也不要直接在压缩包里运行。
@@ -51,7 +55,7 @@ WebView2 版需要 Windows 10/11 x64、.NET Framework 4.6.2+ 和 [Microsoft Edge
 
 - **空间画布**：平面逐层编辑，三维查看全部图层；空白拖动旋转，支持连续 360°，滚轮缩放。
 - **工作空间与图层**：新增、重命名工作空间；新增、删除图层和调整上下顺序。
-- **图形编辑**：12 种普通形状/文本，拖拽添加、移动、调整尺寸；双击或 `F2` 直接编辑文字。图形不绑定特定业务功能。
+- **图形编辑**：14 种普通形状/文本，拖拽添加、移动、调整尺寸；双击或 `F2` 直接编辑文字。图形不绑定特定业务功能。
 - **普通表格**：可添加多张，自定义标题、列名和单元格，支持增删行列、移动、缩放和连线。
 - **自由连线**：从图形或表格边缘拉出箭头；连接点可自由放置，四边中心点吸附；双击连线编辑分支文字。
 - **多选与拖动**：「选取」模式支持框选、组合移动和删除；「拖动」模式仍能操作单个图形，空白拖动控制画布。`Shift` / `Ctrl` 点击多选。

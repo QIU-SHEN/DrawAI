@@ -138,7 +138,7 @@ test('WebView2 keeps graph movement, resize, arrows, editable tables and 3D rota
     await page.locator('#view-spatial').click();const tilt=await page.locator('#tilt').inputValue(),box=await page.locator('#scene').boundingBox();
     await drag({x:box.x+15,y:box.y+15},{x:box.x+130,y:box.y+70});assert.notEqual(await page.locator('#tilt').inputValue(),tilt);
     await page.locator('#desktop-save').click();await expect(page.locator('#save-status')).toHaveText('已保存到文件');
-    assert.equal(JSON.parse(await readFile(file,'utf8')).view.mode,'spatial');
+    await expect.poll(async()=>JSON.parse(await readFile(file,'utf8')).view.mode).toBe('spatial');
     await expect(page.locator('#inspector')).toBeHidden();
   } finally { await host.stop(); }
 });

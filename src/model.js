@@ -11,7 +11,7 @@ export function validateDiagramFile(value) {
   return { format: 'drawai', version: 1, workspaceName: value.workspaceName.trim(), document, view };
 }
 export const kinds = { shape: '普通图形', agent: 'Agent', input: '输入', decision: '判断', result: '结果' };
-export const shapes = { rounded: '圆角矩形', rectangle: '矩形', diamond: '菱形', ellipse: '椭圆', parallelogram: '平行四边形', triangle: '三角形', trapezoid: '梯形', pentagon: '五边形', hexagon: '六边形', octagon: '八边形', chevron: '燕尾形', text: '文本' };
+export const shapes = { rounded: '圆角矩形', rectangle: '矩形', diamond: '菱形', ellipse: '椭圆', parallelogram: '平行四边形', triangle: '三角形', trapezoid: '梯形', pentagon: '五边形', hexagon: '六边形', octagon: '八边形', chevron: '燕尾形', cylinder: '圆柱体', actor: '人形', text: '文本' };
 export const defaultShape = kind => ({ shape: 'rounded', agent: 'rounded', input: 'rectangle', decision: 'diamond', result: 'ellipse' }[kind]);
 export const defaultLayers = () => [{ id: 'flow', name: '业务流程' }, { id: 'data', name: '共享数据' }];
 export const clone = value => structuredClone(value);

@@ -518,6 +518,8 @@ const templates = [
   { id: 'hexagon', svg: '<path d="M17 7H43L57 24L43 41H17L3 24Z"/>' },
   { id: 'octagon', svg: '<path d="M17 5H43L55 16V32L43 43H17L5 32V16Z"/>' },
   { id: 'chevron', svg: '<path d="M5 8H42L57 24L42 40H5L20 24Z"/>' },
+  { id: 'cylinder', svg: '<path d="M10 11A20 7 0 0 1 50 11V37A20 7 0 0 1 10 37Z"/><path d="M10 11A20 7 0 0 0 50 11" fill="none"/>' },
+  { id: 'actor', svg: '<circle cx="30" cy="9" r="6"/><path d="M30 15V31M16 23H44M17 45L30 31L43 45" fill="none"/>' },
   { id: 'text', svg: '<text x="30" y="31" text-anchor="middle" stroke="none" fill="currentColor" font-size="24">T</text>' },
   { id: 'table', label: '表格', svg: '<rect x="5" y="7" width="50" height="34" rx="2"/><path d="M5 18H55M5 29H55M22 18V41"/>' },
 ].map(t => ({ ...t, kind: 'shape', shape: t.id, title: shapes[t.id], label: t.label || shapes[t.id] }));

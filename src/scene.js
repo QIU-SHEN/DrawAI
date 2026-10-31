@@ -76,7 +76,7 @@ function wrap(text, limit = 17, maxLines = 2) {
   return lines;
 }
 const pt = p => p.x.toFixed(2) + ',' + p.y.toFixed(2);
-export const nodeSize = n => ({ w: (n.width ?? (n.shape === 'diamond' ? 260 : n.shape === 'ellipse' ? 210 : 200)) / 2, h: (n.height ?? (n.shape === 'diamond' ? 180 : n.shape === 'ellipse' ? 140 : 112)) / 2 });
+export const nodeSize = n => ({ w: (n.width ?? (n.shape === 'actor' ? 100 : n.shape === 'cylinder' ? 180 : n.shape === 'diamond' ? 260 : n.shape === 'ellipse' ? 210 : 200)) / 2, h: (n.height ?? (['actor', 'cylinder', 'diamond'].includes(n.shape) ? 180 : n.shape === 'ellipse' ? 140 : 112)) / 2 });
 export const portVector = port => ({ n: { x: 0, y: -1 }, e: { x: 1, y: 0 }, s: { x: 0, y: 1 }, w: { x: -1, y: 0 } }[port]);
 export function shapePolygon(node) {
   const { w, h } = nodeSize(node);
@@ -118,9 +118,17 @@ export function perimeterPoint(node, point) {
   };
   const polygon = vertices => vertices.forEach((p, i) => segment(p, vertices[(i + 1) % vertices.length]));
   const vertices = shapePolygon(node);
-  if (vertices) polygon(vertices);
+  if (node.shape === 'cylinder') {
+    const rim = h * .26;
+    segment({ x: -w, y: -h + rim }, { x: -w, y: h - rim });
+    segment({ x: w, y: -h + rim }, { x: w, y: h - rim });
+    for (const side of [-1, 1]) {
+      const cy = side * (h - rim), angle = Math.atan2((y - cy) / rim, x / w);
+      for (const t of [side < 0 ? clamp(angle, -Math.PI, 0) : clamp(angle, 0, Math.PI), 0, side * Math.PI]) candidates.push({ x: w * Math.cos(t), y: cy + rim * Math.sin(t) });
+    }
+  } else if (vertices) polygon(vertices);
   else {
-    const r = Math.min(w, h, node.kind === 'table' ? 8 : node.shape === 'rounded' ? 15 : node.shape === 'text' ? 3 : 2);
+    const r = Math.min(w, h, node.shape === 'actor' ? 0 : node.kind === 'table' ? 8 : node.shape === 'rounded' ? 15 : node.shape === 'text' ? 3 : 2);
     segment({ x: -w + r, y: -h }, { x: w - r, y: -h });
     segment({ x: w, y: -h + r }, { x: w, y: h - r });
     segment({ x: w - r, y: h }, { x: -w + r, y: h });
@@ -169,7 +177,7 @@ export function layerBounds(doc, id) {
     left: Math.min(-820, ...nodes.map(n => n.x - nodeSize(n).w - 55), ...tables.map(t => t.x - 100)),
     right: Math.max(820, ...nodes.map(n => n.x + nodeSize(n).w + 55), ...tables.map(t => t.x + t.width + 100)),
     top: Math.min(tables.length && !nodes.length ? -260 : -400, ...nodes.map(n => n.y - nodeSize(n).h - 65), ...tables.map(t => t.y - 100)),
-    bottom: Math.max(tables.length && !nodes.length ? 340 : 425, ...nodes.map(n => n.y + nodeSize(n).h + 65), ...tables.map(t => t.y + t.height + 80)),
+    bottom: Math.max(tables.length && !nodes.length ? 340 : 425, ...nodes.map(n => n.y + nodeSize(n).h + (n.shape === 'actor' ? 110 : 65)), ...tables.map(t => t.y + t.height + 80)),
   };
 }
 function plane(doc, layer, index, active) {
@@ -193,24 +201,31 @@ function nodeMarkup(n, selected, active, linked, connecting) {
   const variant = n.kind === 'result' ? n.title.startsWith('✓') ? 'success' : n.title.startsWith('×') ? 'warning' : 'neutral' : n.kind;
   const icon = { agent: '◈', input: '▧', decision: '◇', success: '✓', warning: '!', neutral: '↻' }[variant];
   const vertices = shapePolygon(n);
+  const rim = h * .26;
   const back = {
     rounded: `<rect class="node-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="15"/>`,
     rectangle: `<rect class="node-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="2"/>`,
     diamond: `<path class="node-back" d="M0 ${-h}L${w} 0L0 ${h}L${-w} 0Z"/>`,
     ellipse: `<ellipse class="node-back" rx="${w}" ry="${h}"/>`,
+    cylinder: `<path class="node-back" d="M${-w} ${-h + rim}A${w} ${rim} 0 0 1 ${w} ${-h + rim}V${h - rim}A${w} ${rim} 0 0 1 ${-w} ${h - rim}Z"/>`,
+    actor: `<rect class="node-back actor-hit" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" style="fill:transparent;stroke:none;filter:none"/>`,
     parallelogram: `<path class="node-back" d="M${-w * .75} ${-h}H${w}L${w * .75} ${h}H${-w}Z"/>`,
     text: `<rect class="node-back text-back" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}" rx="3"/>`,
   }[n.shape] || (vertices ? `<path class="node-back" d="M${vertices.map(pt).join('L')}Z"/>` : '');
+  const detail = n.shape === 'cylinder' ? `<path class="node-back" style="fill:none;filter:none;pointer-events:none" d="M${-w} ${-h + rim}A${w} ${rim} 0 0 0 ${w} ${-h + rim}"/>`
+    : n.shape === 'actor' ? `<ellipse class="node-back" style="filter:none;pointer-events:none" cx="0" cy="${-.8 * h}" rx="${.36 * w}" ry="${.2 * h}"/><path class="node-back" style="fill:none;filter:none;pointer-events:none" d="M0 ${-.6 * h}V${.35 * h}M${-w} ${-.35 * h}H${w}M${-w} ${h}L0 ${.35 * h}L${w} ${h}"/>` : '';
   const compact = ['diamond', 'ellipse', 'parallelogram', 'text'].includes(n.shape);
-  const content = n.kind === 'shape'
+  const content = n.shape === 'actor'
+    ? textLines(n.title, 0, 0, 7, 'node-title centered', 25) + (n.description ? textLines(n.description, 0, 27, 7, 'node-description centered', 25) : '')
+    : n.kind === 'shape'
     ? textLines(n.title, 0, n.description ? -10 : 8, 7, 'node-title centered', 25) + (n.description ? textLines(n.description, 0, 20, 7, 'node-description centered', 25) : '')
     : compact
     ? '<text class="node-title centered" x="0" y="-12">' + esc(wrap(n.title, 7, 1)[0]) + '</text>' + textLines(n.description, 0, 16, n.shape === 'diamond' ? 5 : 6.3, 'node-description centered', 25)
     : '<text class="node-icon" x="-81" y="-23">' + icon + '</text><text class="node-title" x="-48" y="-23">' + esc(wrap(n.title, 5.7, 1)[0]) + '</text>' + textLines(n.description, -80, 9, 6.7, 'node-description', 26);
-  const base = n.shape === 'diamond' ? { w: 130, h: 90 } : n.shape === 'ellipse' ? { w: 105, h: 70 } : { w: 100, h: 56 };
+  const base = nodeSize({ shape: n.shape });
   const textScale = Math.min(1, w / base.w, h / base.h);
-  const boundary = back.replace(/class="[^"]*"/, 'class="connection-boundary" data-free-port="true"');
-  return '<g transform="translate(' + n.x + ',' + n.y + ')" class="diagram-node ' + variant + (selected ? ' selected' : '') + (active ? '' : ' dimmed') + (connecting ? ' connecting' : '') + '" data-node="' + esc(n.id) + '" data-object="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.title) + '，' + esc(n.description) + '"><title>' + esc(n.title) + '：' + esc(n.description) + '。内部拖动移动，边缘拖出连线，双击编辑。</title>' + back + boundary + `<g class="node-text" transform="scale(${textScale})">` + content + '</g>' + (linked ? '<circle class="linked-dot" cx="0" cy="' + h + '" r="5"/>' : '') + diagramControls(w, h, selected) + '</g>';
+  const boundary = n.shape === 'actor' ? `<rect class="connection-boundary" data-free-port="true" x="${-w}" y="${-h}" width="${w * 2}" height="${h * 2}"/>` : back.replace(/class="[^"]*"/, 'class="connection-boundary" data-free-port="true"');
+  return '<g transform="translate(' + n.x + ',' + n.y + ')" class="diagram-node ' + variant + (selected ? ' selected' : '') + (active ? '' : ' dimmed') + (connecting ? ' connecting' : '') + '" data-node="' + esc(n.id) + '" data-object="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.title) + '，' + esc(n.description) + '"><title>' + esc(n.title) + '：' + esc(n.description) + '。内部拖动移动，边缘拖出连线，双击编辑。</title>' + back + detail + boundary + `<g class="node-text" transform="${n.shape === 'actor' ? 'translate(0,' + (h + 30) + ') ' : ''}scale(${textScale})">` + content + '</g>' + (linked ? '<circle class="linked-dot" cx="0" cy="' + h + '" r="5"/>' : '') + diagramControls(w, h, selected) + '</g>';
 }
 function edgeMarkup(e, a, b, d, label, selected, active, transform = '') {
   const dashed = e.style === 'dashed';

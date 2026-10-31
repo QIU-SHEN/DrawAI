@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const version = '0.6.0';
+const version = '0.7.0';
 const temporaryRoot = path.join(root, '.local', 'desktop-temp');
 await mkdir(temporaryRoot, { recursive: true });
 process.env.TEMP = temporaryRoot; process.env.TMP = temporaryRoot;
@@ -13,7 +13,7 @@ const stage = path.join(root, '.local', 'desktop-source');
 await mkdir(path.join(stage, 'src'), { recursive: true });
 await mkdir(path.join(stage, 'desktop'), { recursive: true });
 // Explicit allowlist: never package the repository, test data, tokens, or user diagrams.
-for (const file of ['index.html', 'src/app.js', 'src/model.js', 'src/scene.js', 'src/styles.css', 'src/portable.json', 'desktop/main.mjs', 'desktop/preload.cjs', 'desktop/file-format.mjs', 'desktop/icon.ico']) {
+for (const file of ['index.html', 'src/app.js', 'src/model.js', 'src/scene.js', 'src/ai.js', 'src/ai-panel.js', 'src/styles.css', 'src/portable.json', 'desktop/main.mjs', 'desktop/preload.cjs', 'desktop/file-format.mjs', 'desktop/icon.ico']) {
   await cp(path.join(root, file), path.join(stage, file));
 }
 await writeFile(path.join(stage, 'package.json'), JSON.stringify({ name: 'drawai-desktop', productName: 'DrawAI', author: 'DrawAI', version, type: 'module', main: 'desktop/main.mjs' }, null, 2));

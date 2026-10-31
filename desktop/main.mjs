@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateFile, readDiagram, readOptional, writeDiagram, contentKey } from './file-format.mjs';
+import { aiEndpoint, AI_REQUEST_LIMIT, fetchAI } from '../src/ai.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = 'drawai-app://editor';
@@ -125,6 +126,19 @@ ipcMain.handle('drawai:open', guarded(async state => {
   return { canceled: result.canceled };
 }));
 ipcMain.handle('drawai:close', guarded(state => exclusive(state, () => closeWindow(state))));
+ipcMain.handle('drawai:ai-cancel', guarded(async (state, id) => { state.aiJobs?.get(id)?.abort(); return {}; }));
+ipcMain.handle('drawai:ai-request', guarded(async (state, request) => {
+  if (!state.initialized || !request || !/^[\w-]{1,80}$/.test(request.id) || typeof request.body !== 'string' || request.body.length > AI_REQUEST_LIMIT || typeof request.key !== 'string' || request.key.length > 4096 || /[\r\n]/.test(request.key)) throw new Error('AI 请求格式无效。');
+  const endpoint = aiEndpoint(request.endpoint), body = JSON.parse(request.body);
+  if (endpoint !== request.endpoint || !body.model || !Array.isArray(body.messages) || body.messages.length > 30 || body.stream !== false) throw new Error('AI 请求格式无效。');
+  state.aiJobs ||= new Map();
+  if (state.aiJobs.size) throw new Error('已有 AI 请求正在进行。');
+  const controller = new AbortController(); state.aiJobs.set(request.id, controller);
+  const timer = setTimeout(() => controller.abort(), 120000);
+  try { return await fetchAI({ endpoint, key: request.key, body: request.body }, controller.signal); }
+  catch (error) { return { error: controller.signal.aborted ? 'AI 请求已停止或超时。' : error instanceof TypeError ? '无法连接 API，请检查地址和网络。' : 'AI 请求失败或返回内容过大，画布未修改。' }; }
+  finally { clearTimeout(timer); state.aiJobs.delete(request.id); }
+}));
 async function openWindow(filename) {
   let loaded;
   if (filename) {
@@ -141,7 +155,7 @@ async function openWindow(filename) {
   if (loaded) state.entries.set('default', { payload: loaded.payload, path: filename, expectedText: loaded.text, savedKey: contentKey(loaded.payload) });
   const webContentsId = win.webContents.id;
   windows.set(webContentsId, state);
-  win.on('closed', () => windows.delete(webContentsId));
+  win.on('closed', () => { for (const job of state.aiJobs?.values() || []) job.abort(); windows.delete(webContentsId); });
   win.on('close', event => { if (!state.allowClose && state.initialized) { event.preventDefault(); win.webContents.send('drawai:command', { type: 'close' }); } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -175,7 +189,7 @@ app.on('second-instance', async (_event, argv, cwd) => {
   else { const win = BrowserWindow.getAllWindows()[0]; if (win) { win.restore(); win.focus(); } else await openWindow(); }
 });
 if (locked) app.whenReady().then(async () => {
-  const allowed = new Map([['/', 'index.html'], ['/index.html', 'index.html'], ...['app.js', 'model.js', 'scene.js', 'styles.css', 'portable.json'].map(f => ['/src/' + f, 'src/' + f])]);
+  const allowed = new Map([['/', 'index.html'], ['/index.html', 'index.html'], ...['app.js', 'model.js', 'scene.js', 'ai.js', 'ai-panel.js', 'styles.css', 'portable.json'].map(f => ['/src/' + f, 'src/' + f])]);
   protocol.handle('drawai-app', async request => {
     const url = new URL(request.url), filename = allowed.get(url.pathname);
     if (url.host !== 'editor' || !filename || request.method !== 'GET') return new Response('Not found', { status: 404 });

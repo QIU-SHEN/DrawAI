@@ -23,6 +23,7 @@ try {
     save: (id, saveAs = false) => invoke('save', { id, saveAs }),
     exportFile: id => invoke('export', { id }),
     open: () => invoke('open'), close: () => invoke('close'),
+    aiRequest: request => invoke('ai-request', request), aiCancel: id => invoke('ai-cancel', { id }),
     onCommand: callback => callbacks.add(callback),
   }) });
   if (boot.testing) Object.defineProperty(window, '__drawaiTest', { value: (action, data) => invoke('test', { action, data }) });

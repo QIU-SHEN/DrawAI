@@ -5,6 +5,8 @@ using System.Collections.ObjectModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,8 +19,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
-[assembly: System.Reflection.AssemblyVersion("0.6.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.6.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.0.0")]
 
 namespace DrawAI.WebViewEdition {
 static class Program {
@@ -130,6 +132,7 @@ sealed class EditorWindow : Form {
     readonly Queue<string> answers = new Queue<string>();
     readonly ToolStripMenuItem themeMenu = new ToolStripMenuItem("主题");
     readonly Dictionary<string, byte[]> assets = new Dictionary<string, byte[]>();
+    readonly Dictionary<string, CancellationTokenSource> aiJobs = new Dictionary<string, CancellationTokenSource>();
     readonly string storageKey = "drawai.webview2." + Guid.NewGuid().ToString("N");
     Dictionary<string, object> loaded;
     bool initialized, allowClose, closePending;
@@ -155,7 +158,7 @@ sealed class EditorWindow : Form {
         }
         UpdateThemeMenu();
         Controls.Add(menu); MainMenuStrip = menu;
-        Program.Windows.Add(this); FormClosed += (s,e) => { Program.Windows.Remove(this); view.Dispose(); };
+        Program.Windows.Add(this); FormClosed += (s,e) => { foreach (var job in aiJobs.Values) job.Cancel(); Program.Windows.Remove(this); view.Dispose(); };
         FormClosing += (s,e) => { if (!allowClose && initialized) { e.Cancel = true; if (!closePending) { closePending = true; Send("close"); } } };
         Shown += async (s,e) => { try { await Start(); } catch (Exception error) { Program.Report(error.Message); allowClose = true; Close(); } };
     }
@@ -166,7 +169,7 @@ sealed class EditorWindow : Form {
     internal void UpdateThemeMenu() { foreach (ToolStripMenuItem item in themeMenu.DropDownItems) item.Checked = String.Equals(item.Tag as string, Program.Theme, StringComparison.OrdinalIgnoreCase); }
     internal void Send(string type, string id = null) { if (view.CoreWebView2 != null) view.CoreWebView2.PostWebMessageAsJson(Program.Serialize(new { command = new { type, id } })); }
     async Task Start() {
-        foreach (var relative in new[] { "index.html", "src/app.js", "src/model.js", "src/scene.js", "src/styles.css", "src/portable.json", "native/loader.js" })
+        foreach (var relative in new[] { "index.html", "src/app.js", "src/model.js", "src/scene.js", "src/ai.js", "src/ai-panel.js", "src/styles.css", "src/portable.json", "native/loader.js" })
             assets["/" + relative] = File.ReadAllBytes(Path.Combine(Program.Root, "web", relative.Replace('/', Path.DirectorySeparatorChar)));
         assets["/"] = assets["/index.html"];
         var environment = await Program.GetEnvironment(); await view.EnsureCoreWebView2Async(environment);
@@ -227,6 +230,11 @@ sealed class EditorWindow : Form {
                 if (values == null || values.Length > 50) throw new Exception("工作空间无效。");
                 foreach (var item in values) await Changed(item, true); initialized = true; result = Status();
             } else if (type == "changed" && initialized) { await Changed(value); result = Status(); }
+            else if (type == "ai-request" && initialized) result = await RequestAI(Program.Obj(value));
+            else if (type == "ai-cancel" && initialized) {
+                CancellationTokenSource job; string requestId = Program.Str(Program.Obj(value), "id");
+                if (requestId != null && aiJobs.TryGetValue(requestId, out job)) job.Cancel(); result = new { };
+            }
             else if ((type == "save" || type == "export") && initialized) {
                 var request = Program.Obj(value); await operation.WaitAsync();
                 try { result = await Save(Program.Str(request, "id"), Object.Equals(Program.Get(request, "saveAs"), true), type == "export"); } finally { operation.Release(); }
@@ -238,6 +246,38 @@ sealed class EditorWindow : Form {
             else throw new Exception("不支持此操作。");
         } catch (Exception error) { result = new { error = error.Message }; closePending = false; }
         if (!IsDisposed && view.CoreWebView2 != null) view.CoreWebView2.PostWebMessageAsJson(Program.Serialize(new { id, result }));
+    }
+    async Task<object> RequestAI(Dictionary<string, object> request) {
+        string id = Program.Str(request, "id"), endpoint = Program.Str(request, "endpoint"), key = Program.Str(request, "key"), body = Program.Str(request, "body");
+        Uri uri;
+        if (id == null || !Regex.IsMatch(id, @"^[\w-]{1,80}$") || key == null || key.Length > 4096 || key.IndexOfAny(new[] { '\r', '\n' }) >= 0 || body == null || Encoding.UTF8.GetByteCount(body) > 16 * 1024 * 1024 ||
+            !Uri.TryCreate(endpoint, UriKind.Absolute, out uri) || (uri.Scheme != "http" && uri.Scheme != "https") || uri.UserInfo != "" || uri.Fragment != "" || !uri.AbsolutePath.EndsWith("/chat/completions")) throw new Exception("AI 请求格式无效。");
+        var parsed = Program.Parse(body); var messages = Program.Get(parsed, "messages") as object[];
+        if (String.IsNullOrWhiteSpace(Program.Str(parsed, "model")) || messages == null || messages.Length > 30 || !Object.Equals(Program.Get(parsed, "stream"), false)) throw new Exception("AI 请求格式无效。");
+        if (aiJobs.Count != 0) throw new Exception("已有 AI 请求正在进行。");
+        var cancellation = new CancellationTokenSource(); aiJobs[id] = cancellation; cancellation.CancelAfter(120000);
+        try {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            using (var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })
+            using (var client = new HttpClient(handler))
+            using (var message = new HttpRequestMessage(HttpMethod.Post, uri)) {
+                client.Timeout = TimeSpan.FromSeconds(120);
+                message.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                if (key != "") message.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+                using (var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellation.Token))
+                using (var input = await response.Content.ReadAsStreamAsync())
+                using (var output = new MemoryStream()) {
+                    var buffer = new byte[16384]; int count;
+                    while ((count = await input.ReadAsync(buffer, 0, buffer.Length, cancellation.Token)) > 0) {
+                        if (output.Length + count > 2 * 1024 * 1024) return new { error = "AI 返回内容过大，画布未修改。" };
+                        output.Write(buffer, 0, count);
+                    }
+                    return new { text = Encoding.UTF8.GetString(output.ToArray()), status = (int)response.StatusCode };
+                }
+            }
+        } catch (OperationCanceledException) { return new { error = "AI 请求已停止或超时。" }; }
+        catch { return new { error = "无法连接 API，请检查地址和网络。" }; }
+        finally { aiJobs.Remove(id); cancellation.Dispose(); }
     }
     string PickSave(string current, string name, bool copy = false) {
         if (Program.Testing) return savePaths.Count == 0 ? null : savePaths.Dequeue();

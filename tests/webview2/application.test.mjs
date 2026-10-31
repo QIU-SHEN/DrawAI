@@ -142,3 +142,10 @@ test('WebView2 keeps graph movement, resize, arrows, editable tables and 3D rota
     await expect(page.locator('#inspector')).toBeHidden();
   } finally { await host.stop(); }
 });
+
+
+test('WebView2 native AI supports images, undo, errors and cancellation without browser CORS', { timeout: 60000 }, async () => {
+  const { mockAPI, nativeAIExercise } = await import('../fixtures/ai.mjs');
+  const api = await mockAPI(), host = await launchWebView();
+  try { await nativeAIExercise(host.page, api); } finally { await host.stop(); await api.close(); }
+});

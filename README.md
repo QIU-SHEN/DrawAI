@@ -2,9 +2,17 @@
 
 **可以在平面与三维之间切换的流程图编辑器。** 将流程、表格和资料放在不同图层上，用跨层连线表达关系，再切回平面逐层编辑。
 
-Windows 免安装运行，图表保存在本机，无需登录。默认只有一个空白图层，不附带任何图表，也不包含 AI 模型或远程 Agent 服务。
+Windows 免安装运行，图表保存在本机，无需登录。默认只有一个空白图层，不附带任何图表，不包含 AI 模型或内置密钥。可自行接入兼容 API，用文字或图片生成图表，再通过对话修改。
 
 [在线试用](https://drawai-spatial-20261028.jiaweishang37.chatgpt.site) · [下载最新版本](https://github.com/QIU-SHEN/DrawAI/releases/latest) · [反馈问题](https://github.com/QIU-SHEN/DrawAI/issues) · [桌面实现](docs/desktop.md) · [WebView2 实现](docs/webview2.md)
+
+## AI 做图
+
+点击顶部「AI 做图」，填写 API 地址、API Key 和模型。支持文字生成、截图还原、继续对话修改；结果可手工编辑和撤销。图片支持上传、粘贴与拖入，需要模型支持识图。
+
+Key 仅在本次打开期间保留，不写入图表文件。发送时，当前图表、最近对话和附图会直接传给所填服务商。网页版需要接口允许跨域，桌面版通过本机请求。[配置与限制说明](docs/ai.md)。
+
+![AI 对话绘图面板](docs/images/ai.png)
 
 ## 预览
 
@@ -24,7 +32,7 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 ![空白画布与天空蓝主题](docs/images/theme-blue.png)
 
-> 截图已更新至 0.6.0。前三张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
+> 截图已更新至 0.7.0。AI 截图使用本机模拟接口演示交互，并非真实模型质量评测。下方前三张为网页版截图，使用临时构造的演示内容，仅用于展示操作效果，不随免安装程序分发；主题截图来自 WebView2 桌面版。
 
 ## 在线试用
 
@@ -32,14 +40,14 @@ Windows 免安装运行，图表保存在本机，无需登录。默认只有一
 
 首次访问只有一个空白图层，可直接拖入图形和表格、切换平面/三维并导出 .drawai 文件。
 
-网页版图表自动保存在当前浏览器，不会上传到服务器或与别人共享。再次访问会恢复自己的内容；需要重新开始时点击左下角「清空画布」（可撤销）。换设备前请导出备份。原生主题菜单、文件关联和系统保存对话框由桌面版提供。
+网页版图表自动保存在当前浏览器，普通编辑不会上传或与别人共享；主动发送 AI 请求时会将当前图表、最近对话和附图发往所填接口。再次访问会恢复自己的内容；需要重新开始时点击左下角「清空画布」（可撤销）。换设备前请导出备份。原生主题菜单、文件关联和系统保存对话框由桌面版提供。
 
 ## 下载与运行
 
 | 版本 | 下载 | 适合情况 |
 | --- | --- | --- |
-| **WebView2 0.6.0（推荐）** | [Windows x64 ZIP，约 381 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.6.0/DrawAI-WebView2-0.6.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
-| Electron 0.6.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.6.0/DrawAI-0.6.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
+| **WebView2 0.7.0（推荐）** | [Windows x64 ZIP，约 402 KiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.7.0/DrawAI-WebView2-0.7.0-Windows-x64.zip) | 复用系统 WebView2 Runtime，包体很小 |
+| Electron 0.7.0 | [Windows x64 ZIP，约 151 MiB](https://github.com/QIU-SHEN/DrawAI/releases/download/v0.7.0/DrawAI-0.7.0-Windows-x64.zip) | 自带浏览器内核，适合不便准备 WebView2 环境的电脑 |
 
 1. 下载 ZIP，**完整解压**到有写入权限的文件夹。
 2. 运行 `DrawAI-WebView2.exe` 或 `DrawAI.exe`。不要只复制 EXE，也不要直接在压缩包里运行。
@@ -53,6 +61,7 @@ WebView2 版需要 Windows 10/11 x64、.NET Framework 4.6.2+ 和 [Microsoft Edge
 
 ## 功能与操作
 
+- **AI 做图**：自定义兼容 API、模型与 Key；文字/图片生成及对话修改，支持撤销与停止。
 - **空间画布**：平面逐层编辑，三维查看全部图层；空白拖动旋转，支持连续 360°，滚轮缩放。
 - **工作空间与图层**：新增、重命名工作空间；新增、删除图层和调整上下顺序。
 - **图形编辑**：14 种普通形状/文本，拖拽添加、移动、调整尺寸；双击或 `F2` 直接编辑文字。图形不绑定特定业务功能。
@@ -121,6 +130,7 @@ npm run test:webview2
 
 | 路径 | 内容 |
 | --- | --- |
+| `src/ai.js` / `src/ai-panel.js` | AI 请求、图表校验、对话和图片输入 |
 | `src/model.js` | 图表数据、校验、旧格式迁移、撤销历史 |
 | `src/scene.js` | 空间投影、图形渲染、连线与坐标变换 |
 | `src/app.js` / `src/styles.css` | 编辑交互、工作空间和主题样式 |

@@ -1,9 +1,11 @@
 import { STORAGE_KEY, createTable, getDiagramObject, updateDiagramObject, kinds, shapes, clone, uid, blankDocument, removeNode, removeLayer, addEdge, validateDocument, validateDiagramFile, History } from './model.js';
 import { renderScene, wrapAngle, canEditPlane, unprojectDelta, unprojectPoint, layerZ, planeMarkup, perspectiveDistance, elementScreenPoint, project, nodeSize, portPoint, freePort, escapeHtml as esc } from './scene.js';
+import { mountAIPanel } from './ai-panel.js';
 
 const $ = id => document.getElementById(id);
 const svg = $('scene');
 const desktop = window.drawaiDesktop;
+let aiPanel = null;
 const initialFile = desktop?.initial?.document ? desktop.initial : window.__DRAWAI_FILE__;
 const desktopState = { ready: false, entries: new Map(), pending: Promise.resolve() };
 function applyTheme(color) {
@@ -89,6 +91,7 @@ function captureWorkspace() {
   workspaceSessions.set(activeWorkspaceId, { doc, history, view });
 }
 function renderWorkspaces() {
+  aiPanel?.refresh();
   const current = workspaceCatalog.find(w => w.id === activeWorkspaceId);
   $('workspace-list').innerHTML = workspaceCatalog.map(w => `<div class="workspace-row${w.id === activeWorkspaceId ? ' active' : ''}"><button class="workspace-item${w.id === activeWorkspaceId ? ' active' : ''}" data-workspace="${esc(w.id)}" aria-pressed="${w.id === activeWorkspaceId}" title="${esc(w.name)}"><span>◇</span><b>${esc(w.name)}</b></button><button class="workspace-rename" data-rename-workspace="${esc(w.id)}" aria-label="重命名 ${esc(w.name)}" title="重命名">✎</button></div>`).join('');
   $('workspace-count').textContent = String(workspaceCatalog.length).padStart(2, '0');
@@ -1220,3 +1223,26 @@ if (desktop) {
   });
   renderWorkspaces();
 }
+
+const aiToggle = document.createElement('button');
+aiToggle.id = 'ai-toggle'; aiToggle.className = 'button quiet'; aiToggle.textContent = '✧ AI 做图'; aiToggle.setAttribute('aria-expanded', 'false');
+document.querySelector('.header-actions').insertBefore(aiToggle, $('import'));
+aiPanel = mountAIPanel({
+  context: () => ({ id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name }),
+  snapshot: () => { finishInlineEdit(true); return { id: activeWorkspaceId, name: workspaceCatalog.find(w => w.id === activeWorkspaceId).name, document: clone(doc) }; },
+  apply: (next, base) => {
+    finishInlineEdit(true);
+    if (activeWorkspaceId !== base.id || JSON.stringify(doc) !== JSON.stringify(base.document)) return false;
+    cancelCanvasDrag(); clearPaletteDrag();
+    mutate(() => { doc = next; selection = null; inspectorNodeId = null; connectSource = null; camera.zoom = 1; camera.panX = 0; camera.panY = 0; }, { refit: true });
+    return true;
+  },
+  openWorkspace: next => {
+    if (workspaceCatalog.length >= 50) { toast('工作空间数量已达上限。'); return false; }
+    const id = uid('workspace'); workspaceCatalog.push({ id, name: 'AI 生成结果' });
+    workspaceSessions.set(id, { doc: clone(next), history: new History(), view: { mode: 'flat' } });
+    switchWorkspace(id); return true;
+  },
+  undo: () => $('undo').click(), resize: () => { finishInlineEdit(true); requestAnimationFrame(viewBox); }, notify: toast,
+  transport: desktop?.aiRequest ? { request: request => desktop.aiRequest(request), cancel: id => desktop.aiCancel(id) } : null,
+});

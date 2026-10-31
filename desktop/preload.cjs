@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('drawaiDesktop', {
   exportFile: id => ipcRenderer.invoke('drawai:export', { id }),
   open: () => ipcRenderer.invoke('drawai:open'),
   close: () => ipcRenderer.invoke('drawai:close'),
+  aiRequest: request => ipcRenderer.invoke('drawai:ai-request', request),
+  aiCancel: id => ipcRenderer.invoke('drawai:ai-cancel', id),
   onCommand: callback => { ipcRenderer.on('drawai:command', (_event, command) => callback(command)); },
 });

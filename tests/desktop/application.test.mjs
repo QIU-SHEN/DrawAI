@@ -81,3 +81,14 @@ test('desktop opens native files, saves in place, isolates workspaces, handles c
     await page.screenshot({ path: path.resolve('test-results/desktop-native.png') });
   } finally { await app.evaluate(({ app }) => app.exit(0)).catch(() => {}); }
 });
+
+
+test('Electron native AI supports images, undo, errors and cancellation without browser CORS', { timeout: 60000 }, async () => {
+  const { mockAPI, nativeAIExercise } = await import('../fixtures/ai.mjs');
+  const api = await mockAPI();
+  const base = path.resolve('.local/desktop-tests'); await mkdir(base, { recursive: true });
+  const dir = await mkdtemp(path.join(base, 'ai-'));
+  const env = { ...process.env, TEMP: dir, TMP: dir, DRAWAI_DESKTOP_TEST: '1', DRAWAI_TEST_PROFILE: path.join(dir, 'profile') }; delete env.ELECTRON_RUN_AS_NODE;
+  const app = await electron.launch({ args: [path.resolve('desktop/main.mjs')], env });
+  try { await nativeAIExercise(await app.firstWindow(), api); } finally { await app.close(); await api.close(); }
+});

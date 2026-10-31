@@ -7,7 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const base = path.resolve('.local/desktop-smoke'); await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, '运行 中文 '));
-const exe = path.resolve('releases/DrawAI-0.6.0/DrawAI-win32-x64/DrawAI.exe');
+const exe = path.resolve('releases/DrawAI-0.7.0/DrawAI-win32-x64/DrawAI.exe');
 const file = path.join(dir, '第一张 图.drawai'), secondFile = path.join(dir, '第二张 图.drawai');
 await writeFile(file, JSON.stringify({ format: 'drawai', version: 1, workspaceName: '测试图表', document: exampleDocument(), view: { mode: 'spatial' } })); await copyFile(file, secondFile);
 const env = { ...process.env, TEMP: dir, TMP: dir }; delete env.ELECTRON_RUN_AS_NODE;
